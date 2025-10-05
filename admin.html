@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>پنل مدیریت پرامپت‌ها - هزارجاب</title>
+    <style>
+        body {
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            background-color: #f4f7f9;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+        }
+        h1 {
+            color: #007bff;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        .prompt-group {
+            margin-bottom: 30px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .prompt-group label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+            color: #555;
+        }
+        .prompt-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 1em;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            min-height: 150px;
+            resize: vertical;
+            box-sizing: border-box; /* Important */
+            line-height: 1.6;
+        }
+        .save-button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.2em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-top: 20px;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+        }
+        .save-button:hover {
+            background-color: #218838;
+        }
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        .toast {
+            background: white;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            border-left: 4px solid #007bff;
+            min-width: 300px;
+            max-width: 400px;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.3s ease-in-out;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        .toast.success {
+            border-left-color: #28a745;
+            background-color: #f8fff9;
+        }
+        .toast.error {
+            border-left-color: #dc3545;
+            background-color: #fff8f8;
+        }
+        .toast.warning {
+            border-left-color: #ffc107;
+            background-color: #fffef8;
+        }
+        .toast .toast-content {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .toast .toast-icon {
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+        .toast.success .toast-icon {
+            color: #28a745;
+        }
+        .toast.error .toast-icon {
+            color: #dc3545;
+        }
+        .toast.warning .toast-icon {
+            color: #ffc107;
+        }
+        .toast .toast-message {
+            flex: 1;
+        }
+        .toast .toast-close {
+            background: none;
+            border: none;
+            font-size: 16px;
+            color: #666;
+            cursor: pointer;
+            padding: 0;
+            margin-left: 10px;
+            flex-shrink: 0;
+        }
+        .toast .toast-close:hover {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>پنل مدیریت پرامپت‌های مشاور شغلی</h1>
+        <div style="text-align: center; margin-bottom: 20px;">
+            <a href="/admin/stats-page" style="background-color: #007bff; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;">📊 مشاهده آمار کاربران</a>
+        </div>
+        <div class="prompt-group">
+            <label for="gemini-api-key">کلید API هوش مصنوعی (GEMINI_API_KEY)</label>
+            <input type="password" id="gemini-api-key" name="GEMINI_API_KEY" style="width: 100%; padding: 10px; font-size: 1em; border-radius: 6px; border: 1px solid #ccc; font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;">
+            <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                کلید API شما از Google AI Studio. پس از ذخیره، تمام مدل‌های هوش مصنوعی با این کلید کار خواهند کرد.
+            </p>
+        </div>
+        <div class="prompt-group">
+            <label for="llm-model-select">مدل هوش مصنوعی (LLM)</label>
+            <select id="llm-model-select" name="llm_model" style="width: 100%; padding: 10px; font-size: 1em; border-radius: 6px;">
+                </select>
+            <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                مدل انتخابی پس از ذخیره تغییرات، برای تمام مکالمات جدید استفاده خواهد شد.
+            </p>
+        </div>
+        <form id="prompt-form">
+            <div class="prompt-group">
+                <label for="COUNSELOR_MANIFESTO">پرامپت اصلی سیستم (COUNSELOR_MANIFESTO)</label>
+                <textarea id="COUNSELOR_MANIFESTO" name="COUNSELOR_MANIFESTO" rows="20"></textarea>
+            </div>
+
+            <div class="prompt-group">
+                <label for="EVIDENCE_EXTRACTION_PROMPT">پرامپت استخراج شواهد (EVIDENCE_EXTRACTION_PROMPT)</label>
+                <textarea id="EVIDENCE_EXTRACTION_PROMPT" name="EVIDENCE_EXTRACTION_PROMPT" rows="8"></textarea>
+            </div>
+            <div class="prompt-group">
+                <label for="PERSONALITY_PARAGRAPH_PROMPT">پرامپت تولید پاراگراف شخصیت (PERSONALITY_PARAGRAPH_PROMPT)</label>
+                <textarea id="PERSONALITY_PARAGRAPH_PROMPT" name="PERSONALITY_PARAGRAPH_PROMPT" rows="5"></textarea>
+            </div>
+            <div class="prompt-group">
+                <label for="FINAL_REPORT_PROMPT">پرامپت تولید گزارش نهایی (FINAL_REPORT_PROMPT)</label>
+                <textarea id="FINAL_REPORT_PROMPT" name="FINAL_REPORT_PROMPT" rows="15"></textarea>
+            </div>
+
+             <div class="prompt-group">
+                <label for="OUTPUT_PROTOCOL">پروتکل ارائه خروجی (OUTPUT_PROTOCOL)</label>
+                <textarea id="OUTPUT_PROTOCOL" name="OUTPUT_PROTOCOL" rows="15"></textarea>
+            </div>
+
+            <div class="prompt-group">
+                <label for="WELCOME_MESSAGE">پیام خوش‌آمدگویی (WELCOME_MESSAGE)</label>
+                <textarea id="WELCOME_MESSAGE" name="WELCOME_MESSAGE" rows="4"></textarea>
+            </div>
+            <div class="prompt-group">
+                <label for="ANALYSIS_START_MESSAGE">پیام شروع تحلیل (ANALYSIS_START_MESSAGE)</label>
+                <textarea id="ANALYSIS_START_MESSAGE" name="ANALYSIS_START_MESSAGE" rows="4"></textarea>
+            </div>
+
+            <button type="submit" class="save-button">ذخیره تمام تغییرات</button>
+        </form>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('prompt-form');
+            const textareas = form.querySelectorAll('textarea');
+            const modelSelect = document.getElementById('llm-model-select');
+            const apiKeyInput = document.getElementById('gemini-api-key');
+            const toastContainer = document.getElementById('toast-container');
+    
+            // 1. Fetch and populate all admin data on page load
+            async function loadAdminData() {
+                try {
+                    // آدرس جدید برای دریافت داده‌ها
+                    const response = await fetch('/admin/data');
+                    if (!response.ok) throw new Error('Failed to fetch data from server.');
+                    
+                    const data = await response.json();
+                    
+                    // Populate prompts
+                    textareas.forEach(textarea => {
+                        if (data.prompts && data.prompts[textarea.name]) {
+                            textarea.value = data.prompts[textarea.name];
+                        }
+                    });
+    
+                    // Populate model dropdown
+                    if (data.available_models && data.settings) {
+                        const selectedModel = data.settings.SELECTED_LLM_MODEL;
+                        modelSelect.innerHTML = ''; // Clear previous options
+                        data.available_models.forEach(modelName => {
+                            const option = document.createElement('option');
+                            option.value = modelName;
+                            option.textContent = modelName;
+                            if (modelName === selectedModel) {
+                                option.selected = true;
+                            }
+                            modelSelect.appendChild(option);
+                        });
+                        
+                        // Populate API key field
+                        if (data.settings.GEMINI_API_KEY) {
+                            apiKeyInput.value = data.settings.GEMINI_API_KEY;
+                        }
+                    }
+    
+                } catch (error) {
+                    showToast(`خطا در بارگذاری داده‌ها: ${error.message}`, 'error');
+                }
+            }
+    
+            // 2. Handle form submission
+            async function saveData() {
+    
+                // Gather prompts data
+                const promptsData = {};
+                textareas.forEach(textarea => {
+                    promptsData[textarea.name] = textarea.value;
+                });
+    
+                // Gather settings data
+                const settingsData = {
+                    "SELECTED_LLM_MODEL": modelSelect.value,
+                    "GEMINI_API_KEY": apiKeyInput.value
+                };
+    
+                // Combine into a single payload
+                const payload = {
+                    prompts: promptsData,
+                    settings: settingsData
+                };
+    
+                try {
+                    // آدرس جدید برای ارسال داده‌ها
+                    const response = await fetch('/admin/data', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+    
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Server returned an error.');
+                    }
+    
+                    const result = await response.json();
+                    showToast(result.message, 'success');
+
+                } catch (error) {
+                    showToast(`ذخیره‌سازی ناموفق بود: ${error.message}`, 'error');
+                }
+            }
+
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                await saveData();
+            });
+
+            // 3. Handle Ctrl+S (Windows/Linux) and Cmd+S (Mac) shortcuts
+            document.addEventListener('keydown', async (event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+                    event.preventDefault();
+                    await saveData();
+                }
+            });
+    
+            // Toast notification system
+            function showToast(message, type = 'info') {
+                const toast = document.createElement('div');
+                toast.className = `toast ${type}`;
+                
+                const iconMap = {
+                    success: '✅',
+                    error: '❌',
+                    warning: '⚠️',
+                    info: 'ℹ️'
+                };
+                
+                toast.innerHTML = `
+                    <div class="toast-content">
+                        <span class="toast-icon">${iconMap[type] || iconMap.info}</span>
+                        <span class="toast-message">${message}</span>
+                        <button class="toast-close" onclick="removeToast(this)">&times;</button>
+                    </div>
+                `;
+                
+                toastContainer.appendChild(toast);
+                
+                // Trigger animation
+                setTimeout(() => {
+                    toast.classList.add('show');
+                }, 100);
+                
+                // Auto remove after 5 seconds
+                setTimeout(() => {
+                    removeToast(toast);
+                }, 5000);
+            }
+            
+            function removeToast(element) {
+                const toast = element.closest ? element.closest('.toast') : element;
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.parentNode.removeChild(toast);
+                    }
+                }, 300);
+            }
+    
+            // Initial load
+            loadAdminData();
+        });
+    </script>
+</body>
+</html>

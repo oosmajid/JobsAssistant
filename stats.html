@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>آمار کاربران - هزارجاب</title>
+    <style>
+        body {
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            background-color: #f4f7f9;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+        }
+        h1 {
+            color: #007bff;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            border-left: 4px solid #007bff;
+        }
+        .stat-card h3 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .stat-item:last-child {
+            border-bottom: none;
+        }
+        .stat-label {
+            font-weight: 500;
+        }
+        .stat-value {
+            background-color: #007bff;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.9em;
+        }
+        .loading {
+            text-align: center;
+            color: #6c757d;
+            font-size: 1.1em;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #f5c6cb;
+        }
+        .refresh-btn {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-bottom: 20px;
+        }
+        .refresh-btn:hover {
+            background-color: #218838;
+        }
+        .back-btn {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-bottom: 20px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .back-btn:hover {
+            background-color: #5a6268;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 آمار کاربران هزارجاب</h1>
+        
+        <div>
+            <a href="/admin" class="back-btn">← بازگشت به پنل مدیریت</a>
+            <button class="refresh-btn" onclick="loadStats()">🔄 بروزرسانی آمار</button>
+        </div>
+        
+        <div id="loading" class="loading">
+            در حال بارگذاری آمار...
+        </div>
+        
+        <div id="error" class="error" style="display: none;"></div>
+        
+        <div id="stats-content" style="display: none;">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>📈 آمار کلی</h3>
+                    <div class="stat-item">
+                        <span class="stat-label">کل کاربران:</span>
+                        <span class="stat-value" id="total-users">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">کاربران فعال (24 ساعت):</span>
+                        <span class="stat-value" id="active-users">-</span>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <h3>🌐 مرورگرها</h3>
+                    <div id="browser-stats"></div>
+                </div>
+                
+                <div class="stat-card">
+                    <h3>💻 سیستم عامل</h3>
+                    <div id="os-stats"></div>
+                </div>
+                
+                <div class="stat-card">
+                    <h3>🌍 کشورها</h3>
+                    <div id="country-stats"></div>
+                </div>
+                
+                <div class="stat-card">
+                    <h3>📱 نوع دستگاه</h3>
+                    <div id="device-stats"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadStats() {
+            const loadingEl = document.getElementById('loading');
+            const errorEl = document.getElementById('error');
+            const contentEl = document.getElementById('stats-content');
+            
+            loadingEl.style.display = 'block';
+            errorEl.style.display = 'none';
+            contentEl.style.display = 'none';
+            
+            try {
+                const response = await fetch('/admin/stats');
+                if (!response.ok) {
+                    throw new Error('خطا در دریافت آمار');
+                }
+                
+                const data = await response.json();
+                displayStats(data);
+                
+            } catch (error) {
+                console.error('Error loading stats:', error);
+                errorEl.textContent = `خطا در بارگذاری آمار: ${error.message}`;
+                errorEl.style.display = 'block';
+            } finally {
+                loadingEl.style.display = 'none';
+            }
+        }
+        
+        function displayStats(data) {
+            // آمار کلی
+            document.getElementById('total-users').textContent = data.total_users || 0;
+            document.getElementById('active-users').textContent = data.active_users_24h || 0;
+            
+            // آمار مرورگرها
+            displayStatItems('browser-stats', data.browser_stats || []);
+            
+            // آمار سیستم عامل
+            displayStatItems('os-stats', data.os_stats || []);
+            
+            // آمار کشورها
+            displayStatItems('country-stats', data.country_stats || []);
+            
+            // آمار نوع دستگاه
+            displayStatItems('device-stats', data.device_stats || []);
+            
+            document.getElementById('stats-content').style.display = 'block';
+        }
+        
+        function displayStatItems(containerId, items) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            
+            if (items.length === 0) {
+                container.innerHTML = '<div class="stat-item">هیچ داده‌ای موجود نیست</div>';
+                return;
+            }
+            
+            items.forEach(item => {
+                const statItem = document.createElement('div');
+                statItem.className = 'stat-item';
+                statItem.innerHTML = `
+                    <span class="stat-label">${item.name || item.browser_name || item.operating_system || item.country || item.device_type}</span>
+                    <span class="stat-value">${item.count}</span>
+                `;
+                container.appendChild(statItem);
+            });
+        }
+        
+        // بارگذاری اولیه
+        window.addEventListener('load', loadStats);
+    </script>
+</body>
+</html>

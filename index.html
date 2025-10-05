@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مشاور شغلی هزارجاب</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            background-color: #f8f9fa;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        
+        /* Dark mode styles */
+        body.dark-mode {
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        
+        body.dark-mode .chat-header {
+            background-color: #2d2d2d;
+            color: #ffffff;
+            border-bottom-color: #404040;
+        }
+        
+        body.dark-mode .chat-messages {
+            background-color: #1a1a1a;
+        }
+        
+        body.dark-mode .chat-input {
+            background-color: #2d2d2d;
+            border-top-color: #404040;
+        }
+        
+        body.dark-mode #user-input {
+            background-color: #404040;
+            color: #ffffff;
+            border-color: #555555;
+        }
+        
+        body.dark-mode #user-input:focus {
+            border-color: #007bff;
+        }
+        
+        body.dark-mode .user-message {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        body.dark-mode .bot-message {
+            background-color: #404040;
+            color: #ffffff;
+        }
+        
+        body.dark-mode .chat-input button {
+            color: #ffffff;
+        }
+        
+        body.dark-mode .chat-input button:hover {
+            color: #cccccc;
+        }
+        
+        body.dark-mode .chat-input button:disabled {
+            color: #666666;
+        }
+        
+        /* مخفی کردن اسکرول‌بار در همه مرورگرها */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+        
+        * {
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        .chat-header {
+            background-color: #fff;
+            color: #333;
+            padding: 15px 25px;
+            font-size: 1.1em;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e9ecef;
+            flex-shrink: 0;
+        }
+        
+        .chat-header-content {
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .new-chat-button {
+            background-color: #fff;
+            color: #333;
+            border: 1px solid #dee2e6;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            transition: all 0.2s;
+        }
+        .new-chat-button:hover { background-color: #f8f9fa; border-color: #ced4da; }
+        
+        .theme-toggle {
+            background-color: #fff;
+            color: #333;
+            border: 1px solid #dee2e6;
+            padding: 8px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+        }
+        
+        .theme-toggle:hover { 
+            background-color: #f8f9fa; 
+            border-color: #ced4da; 
+        }
+        
+        body.dark-mode .theme-toggle {
+            background-color: #404040;
+            color: #ffffff;
+            border-color: #555555;
+        }
+        
+        body.dark-mode         .theme-toggle:hover {
+            background-color: #555555;
+        }
+        
+        .share-button {
+            background-color: #fff;
+            color: #333;
+            border: 1px solid #dee2e6;
+            padding: 8px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+        }
+        
+        .share-button:hover { 
+            background-color: #f8f9fa; 
+            border-color: #ced4da; 
+        }
+        
+        body.dark-mode .share-button {
+            background-color: #404040;
+            color: #ffffff;
+            border-color: #555555;
+        }
+        
+        body.dark-mode .share-button:hover {
+            background-color: #555555;
+        }
+        .chat-messages {
+            flex-grow: 1;
+            padding: 30px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        .message-row {
+            display: flex;
+            align-items: flex-end;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        .user-row { justify-content: flex-start; }
+        .bot-row { justify-content: flex-end; }
+        
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: #f1f3f5;
+            color: #868e96;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1em;
+            flex-shrink: 0;
+        }
+
+        .message {
+            max-width: 75%;
+            padding: 12px 18px;
+            border-radius: 18px;
+            line-height: 1.6;
+            word-wrap: break-word;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.04);
+        }
+        .user-message { background-color: #007bff; color: white; border-bottom-right-radius: 5px; }
+        .bot-message { background-color: #fff; color: #333; border: 1px solid #e9ecef; border-bottom-left-radius: 5px; }
+        .copy-icon { color: #adb5bd; cursor: pointer; font-size: 0.9em; padding: 5px; opacity: 0; transition: opacity 0.2s, color 0.2s; }
+        .message-row:hover .copy-icon { opacity: 1; }
+        .copy-icon:hover { color: #343a40; }
+        .copy-icon .fa-check { color: #28a745; }
+        .typing-indicator { padding: 12px 15px; }
+        .typing-indicator span { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: #aaa; margin: 0 2px; animation: bounce 1.4s infinite ease-in-out both; }
+        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1.0); } }
+        .chat-input { border-top: 1px solid #e9ecef; background-color: #fff; padding: 15px 25px; }
+        
+        .chat-input-content {
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+        }
+        #user-input {
+            flex-grow: 1;
+            padding: 12px 18px;
+            border: 1px solid #dee2e6;
+            border-radius: 25px;
+            font-size: 1em;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            background-color: #f8f9fa;
+            color: #333;
+            resize: none;
+            line-height: 1.5;
+            min-height: 24px; 
+            height: 24px;
+            max-height: calc(1.5em * 5 + 24px);
+            overflow: hidden; 
+        }
+        #user-input:focus { outline: none; border-color: #a6cffb; }
+        .chat-input .input-buttons { display: flex; align-items: center; gap: 5px; }
+        .chat-input button { background-color: transparent; color: #6c757d; border: none; padding: 10px; border-radius: 50%; cursor: pointer; font-size: 1.6em; line-height: 1; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .chat-input button:hover { color: #343a40; }
+        .chat-input button:disabled { color: #ced4da; }
+        #user-input:disabled { background-color: #e9ecef; }
+        @keyframes pulse-shadow { 0%, 100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); } 50% { box-shadow: 0 0 0 8px rgba(220, 53, 69, 0); } }
+        @keyframes pulse-icon { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.2); } }
+        .mic-button.recording { color: #dc3545; animation: pulse-shadow 1.5s infinite; }
+        .mic-button.recording i { animation: pulse-icon 1.5s infinite ease-in-out; }
+        .speech-status { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(0, 0, 0, 0.8); color: white; padding: 10px 20px; border-radius: 20px; font-size: 0.9em; z-index: 1000; display: none; }
+        
+        /* مودال اشتراک‌گذاری */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+        }
+        
+        .modal-content {
+            background-color: #fff;
+            margin: 15% auto;
+            padding: 30px;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            animation: modalSlideIn 0.3s ease-out;
+        }
+        
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .modal-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+            margin: 0;
+        }
+        
+        .close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        
+        .close:hover {
+            color: #000;
+        }
+        
+        .modal-body {
+            margin-bottom: 20px;
+        }
+        
+        .share-link-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .share-link-input {
+            flex: 1;
+            padding: 10px 15px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            font-size: 0.9em;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        
+        .copy-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            transition: background-color 0.2s;
+            white-space: nowrap;
+        }
+        
+        .copy-button:hover {
+            background-color: #0056b3;
+        }
+        
+        .copy-button.copied {
+            background-color: #28a745;
+        }
+        
+        .share-warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 0.85em;
+            margin-top: 15px;
+        }
+        
+        /* حالت تاریک برای مودال */
+        body.dark-mode .modal-content {
+            background-color: #2d2d2d;
+            color: #ffffff;
+        }
+        
+        body.dark-mode .modal-title {
+            color: #ffffff;
+        }
+        
+        body.dark-mode .close {
+            color: #ccc;
+        }
+        
+        body.dark-mode .close:hover {
+            color: #ffffff;
+        }
+        
+        body.dark-mode .share-link-input {
+            background-color: #404040;
+            color: #ffffff;
+            border-color: #555555;
+        }
+        
+        body.dark-mode .share-warning {
+            background-color: #3d2914;
+            border-color: #6c4a00;
+            color: #ffc107;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-header">
+        <div class="chat-header-content">
+            <div>مشاور شغلی هزارجاب</div>
+            <div class="header-right">
+                <button class="share-button" id="share-button" title="اشتراک‌گذاری چت">
+                    <i class="fas fa-share-alt"></i>
+                </button>
+                <button class="theme-toggle" id="theme-toggle">
+                    <i class="fas fa-moon" id="theme-icon"></i>
+                </button>
+                <button class="new-chat-button" id="new-chat-button">+ گفت‌وگوی جدید</button>
+            </div>
+        </div>
+    </div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-input" id="chat-input">
+        <div class="chat-input-content">
+            <textarea id="user-input" placeholder="پیام خود را بنویسید..." rows="1"></textarea>
+            <div class="input-buttons">
+                <button id="mic-button" class="mic-button"><i class="fas fa-microphone"></i></button>
+                <button id="send-button"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+    <div id="speech-status" class="speech-status"></div>
+    
+    <!-- مودال اشتراک‌گذاری -->
+    <div id="share-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">اشتراک‌گذاری چت</h3>
+                <span class="close" id="close-share-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="share-link-container">
+                    <input type="text" id="share-link-input" class="share-link-input" readonly>
+                    <button id="copy-share-link" class="copy-button">کپی لینک</button>
+                </div>
+                <div class="share-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    توجه: با اشتراک‌گذاری این لینک، تمامی محتوای چت شما در دسترس دیگران قرار می‌گیرد.
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const chatMessages = document.getElementById('chat-messages');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+        const newChatButton = document.getElementById('new-chat-button');
+        const micButton = document.getElementById('mic-button');
+        const speechStatus = document.getElementById('speech-status');
+        const themeToggle = document.getElementById('theme-toggle');
+        const themeIcon = document.getElementById('theme-icon');
+        const shareButton = document.getElementById('share-button');
+        const shareModal = document.getElementById('share-modal');
+        const closeShareModal = document.getElementById('close-share-modal');
+        const shareLinkInput = document.getElementById('share-link-input');
+        const copyShareLink = document.getElementById('copy-share-link');
+        
+        let userId = 'web_user_' + Date.now() + Math.random().toString(36).substr(2, 9);
+        let recognition = null;
+        let isRecording = false;
+        
+        // متغیرهای مربوط به تایپ در پس‌زمینه
+        let currentTypingInterval = null;
+        let typingStartTime = null;
+        let typingSpeed = 3; // میلی‌ثانیه بین هر کاراکتر (سرعت بالا)
+        let currentTypingData = null;
+        
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'fa-IR';
+            
+            recognition.onstart = () => { isRecording = true; micButton.classList.add('recording'); };
+            
+            recognition.onresult = (event) => {
+                let interim_transcript = '';
+                let final_transcript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        final_transcript += event.results[i][0].transcript;
+                    } else {
+                        interim_transcript += event.results[i][0].transcript;
+                    }
+                }
+                userInput.value = final_transcript + interim_transcript;
+                userInput.dispatchEvent(new Event('input'));
+            };
+            
+            recognition.onerror = (event) => { console.error('Speech recognition error:', event.error); };
+            recognition.onend = () => { isRecording = false; micButton.classList.remove('recording'); };
+        } else { micButton.style.display = 'none'; }
+
+        function createCopyIcon(textToCopy) {
+            const iconContainer = document.createElement('div');
+            iconContainer.classList.add('copy-icon');
+            iconContainer.innerHTML = '<i class="far fa-copy"></i>';
+            iconContainer.addEventListener('click', () => { navigator.clipboard.writeText(textToCopy).then(() => { iconContainer.innerHTML = '<i class="fas fa-check"></i>'; setTimeout(() => { iconContainer.innerHTML = '<i class="far fa-copy"></i>'; }, 1500); }).catch(err => { console.error('Failed to copy text: ', err); }); });
+            return iconContainer;
+        }
+
+        function addMessage(text, sender) {
+            const messageRow = document.createElement('div');
+            messageRow.classList.add('message-row', sender === 'user' ? 'user-row' : 'bot-row');
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', sender === 'user' ? 'user-message' : 'bot-message');
+            const sanitizedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            messageElement.innerHTML = sanitizedText.replace(/\n/g, '<br>');
+            const copyIcon = createCopyIcon(text);
+
+            if (sender === 'user') {
+                messageRow.appendChild(messageElement);
+                messageRow.appendChild(copyIcon);
+            } else { // Bot
+                const avatar = document.createElement('div');
+                avatar.classList.add('avatar');
+                avatar.innerHTML = '<i class="fa-solid fa-robot"></i>';
+                // تغییر ۱: تغییر ترتیب برای جابجایی آیکون کپی
+                messageRow.appendChild(copyIcon);
+                messageRow.appendChild(messageElement);
+                messageRow.appendChild(avatar);
+            }
+            chatMessages.appendChild(messageRow);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        function addTypedMessage(text, sender) {
+            const messageRow = document.createElement('div');
+            messageRow.classList.add('message-row', sender === 'user' ? 'user-row' : 'bot-row');
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', sender === 'user' ? 'user-message' : 'bot-message');
+            const copyIcon = createCopyIcon(text);
+
+            if (sender === 'bot') {
+                const avatar = document.createElement('div');
+                avatar.classList.add('avatar');
+                avatar.innerHTML = '<i class="fa-solid fa-robot"></i>';
+                // تغییر ۱: تغییر ترتیب برای جابجایی آیکون کپی
+                messageRow.appendChild(copyIcon);
+                messageRow.appendChild(messageElement);
+                messageRow.appendChild(avatar);
+            }
+
+            chatMessages.appendChild(messageRow);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            // شروع تایپ
+            startTypingAnimation(messageElement, text);
+        }
+        
+        function startTypingAnimation(messageElement, text) {
+            let index = 0;
+            const sanitizedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            typingStartTime = Date.now();
+            
+            // ذخیره اطلاعات تایپ فعلی
+            currentTypingData = {
+                messageElement: messageElement,
+                text: sanitizedText,
+                index: index,
+                startTime: typingStartTime
+            };
+            
+            const typingInterval = setInterval(() => {
+                if (index < sanitizedText.length) {
+                    messageElement.innerHTML += sanitizedText[index];
+                    index++;
+                    currentTypingData.index = index;
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                } else {
+                    clearInterval(typingInterval);
+                    currentTypingInterval = null;
+                    currentTypingData = null;
+                    let finalHtml = messageElement.innerHTML;
+                    finalHtml = finalHtml.replace(/\n/g, '<br>');
+                    finalHtml = finalHtml.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+                    messageElement.innerHTML = finalHtml;
+                }
+            }, typingSpeed);
+            
+            currentTypingInterval = typingInterval;
+        }
+        
+        function resumeTypingIfNeeded() {
+            if (!currentTypingData || !currentTypingInterval) return;
+            
+            const elapsed = Date.now() - currentTypingData.startTime;
+            const expectedIndex = Math.floor(elapsed / typingSpeed);
+            
+            if (expectedIndex > currentTypingData.index) {
+                // تایپ در پس‌زمینه ادامه پیدا کرده
+                const skipCount = expectedIndex - currentTypingData.index;
+                const remainingText = currentTypingData.text.substring(currentTypingData.index);
+                const textToAdd = remainingText.substring(0, skipCount);
+                
+                currentTypingData.messageElement.innerHTML += textToAdd;
+                currentTypingData.index += skipCount;
+                
+                if (currentTypingData.index >= currentTypingData.text.length) {
+                    // تایپ تمام شده
+                    clearInterval(currentTypingInterval);
+                    const finalMessageElement = currentTypingData.messageElement;
+                    let finalHtml = finalMessageElement.innerHTML;
+                    finalHtml = finalHtml.replace(/\n/g, '<br>');
+                    finalHtml = finalHtml.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+                    finalMessageElement.innerHTML = finalHtml;
+                    currentTypingInterval = null;
+                    currentTypingData = null;
+                }
+            }
+            
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function showTypingIndicator() {
+            const messageRow = document.createElement('div');
+            messageRow.id = 'typing-indicator-row';
+            messageRow.classList.add('message-row', 'bot-row');
+            const avatar = document.createElement('div');
+            avatar.classList.add('avatar');
+            avatar.innerHTML = '<i class="fa-solid fa-robot"></i>';
+            const indicator = document.createElement('div');
+            indicator.classList.add('message', 'bot-message', 'typing-indicator');
+            indicator.innerHTML = '<span></span><span></span><span></span>';
+            messageRow.appendChild(indicator);
+            messageRow.appendChild(avatar);
+            chatMessages.appendChild(messageRow);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function removeTypingIndicator() { const indicatorRow = document.getElementById('typing-indicator-row'); if (indicatorRow) indicatorRow.remove(); }
+        function startNewChat() {
+            chatMessages.innerHTML = '';
+            userId = 'web_user_' + Date.now() + Math.random().toString(36).substr(2, 9);
+            showTypingIndicator();
+            setTimeout(() => { removeTypingIndicator(); addTypedMessage('سلام! من مشاور شغلی «هزارجاب» هستم. برای اینکه بتونم بهتر کمکت کنم، لطفاً خودت رو کامل معرفی کن: نام، سن، جنسیت، وضعیت شغلی فعلی و رشتهٔ تحصیلی.', 'bot'); }, 1000);
+        }
+        function toggleSpeechRecognition() { if (!recognition || sendButton.disabled) return; if (isRecording) { recognition.stop(); } else { recognition.start(); } }
+        
+        function toggleTheme() {
+            const body = document.body;
+            const isDark = body.classList.contains('dark-mode');
+            
+            if (isDark) {
+                body.classList.remove('dark-mode');
+                themeIcon.className = 'fas fa-moon';
+                localStorage.setItem('theme', 'light');
+            } else {
+                body.classList.add('dark-mode');
+                themeIcon.className = 'fas fa-sun';
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+        
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                document.body.classList.add('dark-mode');
+                themeIcon.className = 'fas fa-sun';
+            }
+        }
+        
+        async function generateShareLink() {
+            try {
+                const response = await fetch('/share-chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        conversation: getCurrentConversation()
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('خطا در تولید لینک اشتراک‌گذاری');
+                }
+                
+                const data = await response.json();
+                const shareUrl = `${window.location.origin}/shared/${data.share_id}`;
+                shareLinkInput.value = shareUrl;
+                return shareUrl;
+            } catch (error) {
+                console.error('Error generating share link:', error);
+                shareLinkInput.value = 'خطا در تولید لینک';
+                return null;
+            }
+        }
+        
+        function getCurrentConversation() {
+            const messages = [];
+            const messageRows = chatMessages.querySelectorAll('.message-row');
+            
+            messageRows.forEach(row => {
+                const messageElement = row.querySelector('.message');
+                if (messageElement && !row.id.includes('typing-indicator')) {
+                    const isUser = row.classList.contains('user-row');
+                    // برای حفظ فرمت‌بندی از innerHTML استفاده می‌کنیم
+                    const text = messageElement.innerHTML.trim();
+                    if (text) {
+                        messages.push({
+                            role: isUser ? 'user' : 'bot',
+                            text: text
+                        });
+                    }
+                }
+            });
+            
+            return messages;
+        }
+        
+        function openShareModal() {
+            shareModal.style.display = 'block';
+            shareLinkInput.value = 'در حال تولید لینک...';
+            generateShareLink();
+        }
+        
+        function closeShareModalHandler() {
+            shareModal.style.display = 'none';
+        }
+        
+        async function copyToClipboard() {
+            try {
+                await navigator.clipboard.writeText(shareLinkInput.value);
+                copyShareLink.textContent = 'کپی شد!';
+                copyShareLink.classList.add('copied');
+                
+                setTimeout(() => {
+                    copyShareLink.textContent = 'کپی لینک';
+                    copyShareLink.classList.remove('copied');
+                }, 2000);
+            } catch (error) {
+                console.error('خطا در کپی کردن:', error);
+                // Fallback for older browsers
+                shareLinkInput.select();
+                document.execCommand('copy');
+                copyShareLink.textContent = 'کپی شد!';
+                copyShareLink.classList.add('copied');
+                
+                setTimeout(() => {
+                    copyShareLink.textContent = 'کپی لینک';
+                    copyShareLink.classList.remove('copied');
+                }, 2000);
+            }
+        }
+        async function sendMessage() {
+            const messageText = userInput.value.trim();
+            if (messageText === '' || sendButton.disabled) return;
+            addMessage(messageText, 'user');
+            userInput.value = '';
+            userInput.dispatchEvent(new Event('input'));
+            sendButton.disabled = true; userInput.disabled = true; micButton.disabled = true;
+            showTypingIndicator();
+            try {
+                const response = await fetch('http://127.0.0.1:5007/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId, message: messageText, }), });
+                if (!response.ok) throw new Error('Network response was not ok.');
+                const data = await response.json();
+                removeTypingIndicator();
+                addTypedMessage(data.reply, 'bot');
+            } catch (error) {
+                console.error('Error:', error);
+                removeTypingIndicator();
+                addMessage('متاسفانه خطایی در ارتباط با سرور رخ داد. لطفا دوباره تلاش کنید.', 'bot');
+            } finally {
+                sendButton.disabled = false; userInput.disabled = false; micButton.disabled = false;
+                userInput.focus();
+            }
+        }
+        sendButton.addEventListener('click', sendMessage);
+        newChatButton.addEventListener('click', startNewChat);
+        micButton.addEventListener('click', toggleSpeechRecognition);
+        themeToggle.addEventListener('click', toggleTheme);
+        shareButton.addEventListener('click', openShareModal);
+        closeShareModal.addEventListener('click', closeShareModalHandler);
+        copyShareLink.addEventListener('click', copyToClipboard);
+        
+        // بستن مودال با کلیک خارج از آن
+        window.addEventListener('click', (event) => {
+            if (event.target === shareModal) {
+                closeShareModalHandler();
+            }
+        });
+        userInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        userInput.addEventListener('input', () => {
+            const lineHeight = parseInt(window.getComputedStyle(userInput).lineHeight);
+            const minHeight = 24;
+            const twoLineHeight = lineHeight * 2;
+            
+            userInput.style.height = 'auto';
+            const scrollHeight = userInput.scrollHeight;
+            
+            // اگر محتوا کمتر از 2 خط باشد، ارتفاع را 24 نگه دار
+            if (scrollHeight <= twoLineHeight) {
+                userInput.style.height = minHeight + 'px';
+            } else {
+                userInput.style.height = scrollHeight + 'px';
+            }
+            
+            const maxHeight = parseInt(window.getComputedStyle(userInput).maxHeight);
+            if (userInput.scrollHeight > maxHeight) {
+                userInput.style.overflowY = 'auto';
+            } else {
+                userInput.style.overflowY = 'hidden';
+            }
+        });
+
+        // Event listener برای visibility change
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && currentTypingData) {
+                // وقتی به تب برمی‌گردیم، تایپ را ادامه می‌دهیم
+                resumeTypingIfNeeded();
+            }
+        });
+
+        // اسکرول chat-messages وقتی موس در خارج از آن است
+        document.addEventListener('wheel', (event) => {
+            const chatMessagesElement = document.getElementById('chat-messages');
+            const rect = chatMessagesElement.getBoundingClientRect();
+            const mouseX = event.clientX;
+            const mouseY = event.clientY;
+            
+            // بررسی اینکه آیا موس در خارج از chat-messages است
+            const isOutsideChat = mouseX < rect.left || mouseX > rect.right || 
+                                 mouseY < rect.top || mouseY > rect.bottom;
+            
+            if (isOutsideChat && !event.ctrlKey && !event.metaKey) {
+                // جلوگیری از اسکرول صفحه و اسکرول chat-messages به جای آن
+                event.preventDefault();
+                chatMessagesElement.scrollTop += event.deltaY;
+            }
+        }, { passive: false });
+
+        window.addEventListener('load', () => { 
+            loadTheme();
+            showTypingIndicator(); 
+            setTimeout(() => { removeTypingIndicator(); addTypedMessage('سلام! من مشاور شغلی «هزارجاب» هستم. برای اینکه بتونم بهتر کمکت کنم، لطفاً خودت رو کامل معرفی کن: نام، سن، جنسیت، وضعیت شغلی فعلی و رشتهٔ تحصیلی.', 'bot'); }, 1000); 
+        });
+    </script>
+</body>
+</html>

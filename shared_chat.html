@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>چت اشتراکی - مشاور شغلی هزارجاب</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            background-color: #f8f9fa;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        
+        /* Dark mode styles */
+        body.dark-mode {
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        
+        body.dark-mode .chat-header {
+            background-color: #2d2d2d;
+            color: #ffffff;
+            border-bottom-color: #404040;
+        }
+        
+        body.dark-mode .chat-messages {
+            background-color: #1a1a1a;
+        }
+        
+        /* مخفی کردن اسکرول‌بار در همه مرورگرها */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+        
+        * {
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        
+        .chat-header {
+            background-color: #fff;
+            color: #333;
+            padding: 15px 25px;
+            font-size: 1.1em;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e9ecef;
+            flex-shrink: 0;
+        }
+        
+        .chat-header-content {
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .back-button {
+            background-color: #fff;
+            color: #333;
+            border: 1px solid #dee2e6;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        
+        .back-button:hover { 
+            background-color: #f8f9fa; 
+            border-color: #ced4da; 
+        }
+        
+        .theme-toggle {
+            background-color: #fff;
+            color: #333;
+            border: 1px solid #dee2e6;
+            padding: 8px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+        }
+        
+        .theme-toggle:hover { 
+            background-color: #f8f9fa; 
+            border-color: #ced4da; 
+        }
+        
+        body.dark-mode .back-button {
+            background-color: #404040;
+            color: #ffffff;
+            border-color: #555555;
+        }
+        
+        body.dark-mode .back-button:hover {
+            background-color: #555555;
+        }
+        
+        body.dark-mode .theme-toggle {
+            background-color: #404040;
+            color: #ffffff;
+            border-color: #555555;
+        }
+        
+        body.dark-mode .theme-toggle:hover {
+            background-color: #555555;
+        }
+        
+        .chat-messages {
+            flex-grow: 1;
+            padding: 30px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        
+        .message-row {
+            display: flex;
+            align-items: flex-end;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        
+        .user-row { justify-content: flex-start; }
+        .bot-row { justify-content: flex-end; }
+        
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: #f1f3f5;
+            color: #868e96;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1em;
+            flex-shrink: 0;
+        }
+        
+        .message {
+            max-width: 75%;
+            padding: 12px 18px;
+            border-radius: 18px;
+            line-height: 1.6;
+            word-wrap: break-word;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.04);
+        }
+        
+        .user-message { 
+            background-color: #007bff; 
+            color: white; 
+            border-bottom-right-radius: 5px; 
+        }
+        
+        .bot-message { 
+            background-color: #fff; 
+            color: #333; 
+            border: 1px solid #e9ecef; 
+            border-bottom-left-radius: 5px; 
+        }
+        
+        body.dark-mode .user-message {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        body.dark-mode .bot-message {
+            background-color: #404040;
+            color: #ffffff;
+        }
+        
+        .loading-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        body.dark-mode .loading-text {
+            color: #ccc;
+        }
+        
+        .error-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            flex-direction: column;
+            gap: 20px;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .error-icon {
+            font-size: 4em;
+            color: #dc3545;
+        }
+        
+        .error-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #dc3545;
+        }
+        
+        .error-message {
+            color: #666;
+            font-size: 1.1em;
+            max-width: 500px;
+        }
+        
+        body.dark-mode .error-message {
+            color: #ccc;
+        }
+        
+        .chat-info {
+            background-color: #e3f2fd;
+            border: 1px solid #bbdefb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 0.9em;
+            color: #1976d2;
+        }
+        
+        body.dark-mode .chat-info {
+            background-color: #1a237e;
+            border-color: #283593;
+            color: #90caf9;
+        }
+        
+        .chat-info i {
+            margin-left: 8px;
+        }
+        
+        .view-count {
+            margin-top: 10px;
+            font-size: 0.85em;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-header">
+        <div class="chat-header-content">
+            <div>چت اشتراکی - مشاور شغلی هزارجاب</div>
+            <div class="header-right">
+                <button class="theme-toggle" id="theme-toggle">
+                    <i class="fas fa-moon" id="theme-icon"></i>
+                </button>
+                <a href="/" class="back-button">بازگشت به صفحه اصلی</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="chat-messages" id="chat-messages">
+        <div class="loading-container" id="loading-container">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">در حال بارگذاری چت...</div>
+        </div>
+    </div>
+    
+    <script>
+        const chatMessages = document.getElementById('chat-messages');
+        const loadingContainer = document.getElementById('loading-container');
+        const themeToggle = document.getElementById('theme-toggle');
+        const themeIcon = document.getElementById('theme-icon');
+        
+        // دریافت share_id از URL
+        const pathParts = window.location.pathname.split('/');
+        const shareId = pathParts[pathParts.length - 1];
+        
+        function addMessage(text, sender) {
+            const messageRow = document.createElement('div');
+            messageRow.classList.add('message-row', sender === 'user' ? 'user-row' : 'bot-row');
+            
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', sender === 'user' ? 'user-message' : 'bot-message');
+            
+            // متن از قبل فرمت‌بندی شده است (innerHTML از index.html)
+            if (sender === 'bot') {
+                // برای متن‌های bot که از قبل فرمت‌بندی شده‌اند
+                messageElement.innerHTML = text;
+            } else {
+                // برای پیام‌های کاربر فقط escape کردن
+                const sanitizedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                messageElement.innerHTML = sanitizedText.replace(/\n/g, '<br>');
+            }
+            
+            if (sender === 'user') {
+                messageRow.appendChild(messageElement);
+            } else { // Bot
+                const avatar = document.createElement('div');
+                avatar.classList.add('avatar');
+                avatar.innerHTML = '<i class="fa-solid fa-robot"></i>';
+                messageRow.appendChild(messageElement);
+                messageRow.appendChild(avatar);
+            }
+            
+            chatMessages.appendChild(messageRow);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        function showError(message) {
+            loadingContainer.innerHTML = `
+                <div class="error-container">
+                    <div class="error-icon">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="error-title">خطا در بارگذاری</div>
+                    <div class="error-message">${message}</div>
+                </div>
+            `;
+        }
+        
+        function showChatInfo(data) {
+            const chatInfo = document.createElement('div');
+            chatInfo.classList.add('chat-info');
+            chatInfo.innerHTML = `
+                <div>
+                    <i class="fas fa-share-alt"></i>
+                    این چت به صورت اشتراکی نمایش داده می‌شود
+                </div>
+                <div class="view-count">
+                    <i class="fas fa-eye"></i>
+                    ${data.view_count} بار مشاهده شده
+                </div>
+            `;
+            chatMessages.appendChild(chatInfo);
+        }
+        
+        async function loadSharedChat() {
+            try {
+                const response = await fetch(`/api/shared/${shareId}`);
+                
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        showError('چت اشتراکی یافت نشد یا منقضی شده است.');
+                    } else {
+                        showError('خطا در دریافت چت اشتراکی.');
+                    }
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                // حذف loading container
+                loadingContainer.remove();
+                
+                // نمایش اطلاعات چت
+                showChatInfo(data);
+                
+                // نمایش پیام‌ها
+                data.conversation.forEach(message => {
+                    addMessage(message.text, message.role);
+                });
+                
+            } catch (error) {
+                console.error('Error loading shared chat:', error);
+                showError('خطا در ارتباط با سرور.');
+            }
+        }
+        
+        function toggleTheme() {
+            const body = document.body;
+            const isDark = body.classList.contains('dark-mode');
+            
+            if (isDark) {
+                body.classList.remove('dark-mode');
+                themeIcon.className = 'fas fa-moon';
+                localStorage.setItem('theme', 'light');
+            } else {
+                body.classList.add('dark-mode');
+                themeIcon.className = 'fas fa-sun';
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+        
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                document.body.classList.add('dark-mode');
+                themeIcon.className = 'fas fa-sun';
+            }
+        }
+        
+        // Event listeners
+        themeToggle.addEventListener('click', toggleTheme);
+        
+        // اسکرول chat-messages وقتی موس در خارج از آن است
+        document.addEventListener('wheel', (event) => {
+            const chatMessagesElement = document.getElementById('chat-messages');
+            const rect = chatMessagesElement.getBoundingClientRect();
+            const mouseX = event.clientX;
+            const mouseY = event.clientY;
+            
+            // بررسی اینکه آیا موس در خارج از chat-messages است
+            const isOutsideChat = mouseX < rect.left || mouseX > rect.right || 
+                                 mouseY < rect.top || mouseY > rect.bottom;
+            
+            if (isOutsideChat && !event.ctrlKey && !event.metaKey) {
+                // جلوگیری از اسکرول صفحه و اسکرول chat-messages به جای آن
+                event.preventDefault();
+                chatMessagesElement.scrollTop += event.deltaY;
+            }
+        }, { passive: false });
+        
+        // بارگذاری اولیه
+        window.addEventListener('load', () => {
+            loadTheme();
+            if (shareId && shareId !== '') {
+                loadSharedChat();
+            } else {
+                showError('شناسه چت اشتراکی نامعتبر است.');
+            }
+        });
+    </script>
+</body>
+</html>
