@@ -143,12 +143,168 @@
         .toast .toast-close:hover {
             color: #333;
         }
+        
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .modal-overlay.show {
+            display: flex;
+        }
+        
+        .modal {
+            background: white;
+            border-radius: 15px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            transform: scale(0.8);
+            transition: transform 0.3s ease;
+        }
+        
+        .modal-overlay.show .modal {
+            transform: scale(1);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .modal-title {
+            margin: 0;
+            color: #333;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #666;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+        
+        .modal-close:hover {
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .modal-body {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            font-size: 16px;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            transition: border-color 0.3s ease;
+            box-sizing: border-box;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        
+        .modal-footer {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+        }
+        
+        .btn-modal {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h1>پنل مدیریت پرامپت‌های مشاور شغلی</h1>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h1>پنل مدیریت پرامپت‌های مشاور شغلی</h1>
+            <div>
+                <button onclick="changeAdminPassword()" style="background-color: #ffc107; color: black; padding: 8px 15px; border: none; border-radius: 6px; margin-right: 10px; cursor: pointer; font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;">🔑 تغییر رمز ادمین</button>
+                <button onclick="logout()" style="background-color: #dc3545; color: white; padding: 8px 15px; border: none; border-radius: 6px; cursor: pointer; font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;">🚪 خروج</button>
+            </div>
+        </div>
         <div style="text-align: center; margin-bottom: 20px;">
             <a href="/admin/stats-page" style="background-color: #007bff; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;">📊 مشاهده آمار کاربران</a>
         </div>
@@ -202,6 +358,60 @@
 
             <button type="submit" class="save-button">ذخیره تمام تغییرات</button>
         </form>
+    </div>
+
+    <!-- Change Password Modal -->
+    <div class="modal-overlay" id="passwordModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">🔑 تغییر رمز عبور ادمین</h3>
+                <button class="modal-close" onclick="closePasswordModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="passwordForm">
+                    <div class="form-group">
+                        <label for="currentPassword" class="form-label">رمز عبور فعلی:</label>
+                        <input type="password" id="currentPassword" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword" class="form-label">رمز عبور جدید:</label>
+                        <input type="password" id="newPassword" class="form-input" required minlength="6">
+                        <small style="color: #666; font-size: 0.9em;">حداقل 6 کاراکتر</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword" class="form-label">تأیید رمز عبور جدید:</label>
+                        <input type="password" id="confirmPassword" class="form-input" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-modal btn-secondary" onclick="closePasswordModal()">لغو</button>
+                <button type="button" class="btn-modal btn-primary" onclick="submitPasswordChange()">تغییر رمز عبور</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logout Confirmation Modal -->
+    <div class="modal-overlay" id="logoutModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">🚪 خروج از پنل ادمین</h3>
+                <button class="modal-close" onclick="closeLogoutModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="text-align: center; padding: 1rem 0;">
+                    <div style="font-size: 4rem; margin-bottom: 1rem;">🚪</div>
+                    <h4 style="color: #333; margin-bottom: 1rem;">آیا مطمئن هستید که می‌خواهید از پنل ادمین خارج شوید؟</h4>
+                    <p style="color: #666; margin: 0;">
+                        پس از خروج، برای دسترسی مجدد به پنل باید دوباره وارد شوید.
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-modal btn-secondary" onclick="closeLogoutModal()">انصراف</button>
+                <button type="button" class="btn-modal btn-danger" onclick="confirmLogout()">خروج از پنل</button>
+            </div>
+        </div>
     </div>
 
     <!-- Toast Container -->
@@ -356,6 +566,136 @@
     
             // Initial load
             loadAdminData();
+            
+            // Admin logout function - Open Modal
+            window.logout = function() {
+                document.getElementById('logoutModal').classList.add('show');
+            };
+
+            // Close logout modal
+            window.closeLogoutModal = function() {
+                document.getElementById('logoutModal').classList.remove('show');
+            };
+
+            // Confirm logout
+            window.confirmLogout = function() {
+                showToast('در حال خروج...', 'info');
+                // مستقیماً به route خروج برویم که session را پاک می‌کند
+                window.location.href = '/admin/logout';
+            };
+
+            // Change admin password function - Open Modal
+            window.changeAdminPassword = function() {
+                document.getElementById('passwordModal').classList.add('show');
+                // Clear form
+                document.getElementById('passwordForm').reset();
+                // Focus on first input
+                setTimeout(() => {
+                    document.getElementById('currentPassword').focus();
+                }, 100);
+            };
+
+            // Close password modal
+            window.closePasswordModal = function() {
+                document.getElementById('passwordModal').classList.remove('show');
+            };
+
+            // Submit password change
+            window.submitPasswordChange = function() {
+                const currentPassword = document.getElementById('currentPassword').value;
+                const newPassword = document.getElementById('newPassword').value;
+                const confirmPassword = document.getElementById('confirmPassword').value;
+
+                // Validation
+                if (!currentPassword) {
+                    showToast('رمز عبور فعلی وارد نشده است!', 'error');
+                    return;
+                }
+
+                if (!newPassword) {
+                    showToast('رمز عبور جدید وارد نشده است!', 'error');
+                    return;
+                }
+
+                if (newPassword.length < 6) {
+                    showToast('رمز عبور جدید باید حداقل 6 کاراکتر باشد!', 'error');
+                    return;
+                }
+
+                if (newPassword !== confirmPassword) {
+                    showToast('رمز عبور جدید با تأیید آن مطابقت ندارد!', 'error');
+                    return;
+                }
+
+                showToast('در حال تغییر رمز عبور...', 'info');
+
+                // Send password change request
+                fetch('/admin/change-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        current_password: currentPassword,
+                        new_password: newPassword
+                    })
+                })
+                .then(response => {
+                    console.log('Response status:', response.status);
+                    return response.json().then(data => {
+                        console.log('Response data:', data);
+                        return {
+                            status: response.status,
+                            data: data
+                        };
+                    });
+                })
+                .then(result => {
+                    console.log('Final result:', result);
+                    if (result.status === 200) {
+                        showToast('رمز عبور ادمین با موفقیت تغییر کرد!', 'success');
+                        closePasswordModal();
+                    } else if (result.status === 401) {
+                        showToast('رمز عبور فعلی اشتباه است!', 'error');
+                    } else if (result.status === 400) {
+                        showToast('رمز عبور جدید باید حداقل 6 کاراکتر باشد!', 'error');
+                    } else if (result.data.error) {
+                        showToast('خطا در تغییر رمز عبور: ' + result.data.error, 'error');
+                    } else {
+                        showToast('خطای نامشخص در تغییر رمز عبور', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showToast('خطا در ارتباط با سرور: ' + error.message, 'error');
+                });
+            };
+
+            // Close password modal when clicking outside
+            document.getElementById('passwordModal').addEventListener('click', function(e) {
+                if (e.target === this) {
+                    closePasswordModal();
+                }
+            });
+
+            // Close logout modal when clicking outside
+            document.getElementById('logoutModal').addEventListener('click', function(e) {
+                if (e.target === this) {
+                    closeLogoutModal();
+                }
+            });
+
+            // Close modals with Escape key
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    if (document.getElementById('passwordModal').classList.contains('show')) {
+                        closePasswordModal();
+                    }
+                    if (document.getElementById('logoutModal').classList.contains('show')) {
+                        closeLogoutModal();
+                    }
+                }
+            });
         });
     </script>
 </body>

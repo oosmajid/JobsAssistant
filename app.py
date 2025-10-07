@@ -10,6 +10,7 @@ load_dotenv()
 # متغیرهای مهم از محیط
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 PROJECT_REF    = os.getenv("PROJECT_REF")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")  # پسورد پیش‌فرض ادمین
 
 # ==============================================================================
 # 2) Imports and Basic Setup
@@ -23,7 +24,7 @@ import uuid
 import hashlib
 import secrets
 from datetime import datetime
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, session, redirect, url_for, render_template_string
 from flask_cors import CORS
 from sqlalchemy import create_engine, text
 import google.generativeai as genai
@@ -62,6 +63,161 @@ DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "models/gemini-flash-latest")
 
 # دیکشنری گلوبال برای نگهداری پرامپت‌ها
 PROMPTS = {}
+
+# ==============================================================================
+# Admin Authentication Functions
+# ==============================================================================
+def is_admin_authenticated():
+    """بررسی می‌کند که آیا کاربر ادمین وارد شده است یا خیر."""
+    return session.get('admin_authenticated', False)
+
+def require_admin_auth(f):
+    """دکوراتور برای محافظت از route های ادمین."""
+    def decorated_function(*args, **kwargs):
+        if not is_admin_authenticated():
+            # برای صفحه HTML، redirect به صفحه لاگین
+            if request.endpoint in ['serve_admin', 'serve_stats']:
+                return render_template_string(ADMIN_LOGIN_TEMPLATE), 401
+            # برای API ها، JSON error برگردانیم
+            else:
+                return jsonify({'error': 'Authentication required', 'login_required': True}), 401
+        return f(*args, **kwargs)
+    decorated_function.__name__ = f.__name__
+    return decorated_function
+
+def get_admin_password():
+    """دریافت پسورد ادمین از دیتابیس یا متغیر محیطی."""
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT setting_value FROM public.settings WHERE setting_key = 'ADMIN_PASSWORD'")).fetchone()
+            if result:
+                return result[0]
+    except:
+        pass
+    return ADMIN_PASSWORD
+
+# Template ورود ادمین
+ADMIN_LOGIN_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ورود ادمین - مشاور شغلی</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazir-font@v30.1.0/dist/font-face.css" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            padding: 2rem;
+            width: 100%;
+            max-width: 400px;
+        }
+        .login-title {
+            text-align: center;
+            margin-bottom: 2rem;
+            color: #333;
+            font-weight: 600;
+        }
+        .form-control {
+            border-radius: 10px;
+            border: 2px solid #e9ecef;
+            padding: 12px 15px;
+            font-size: 16px;
+        }
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        .btn-login {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            width: 100%;
+            color: white;
+        }
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .alert {
+            border-radius: 10px;
+            border: none;
+        }
+        .back-link {
+            text-align: center;
+            margin-top: 1rem;
+        }
+        .back-link a {
+            color: #667eea;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h2 class="login-title">🔐 ورود ادمین</h2>
+        <div id="error-alert" class="alert alert-danger" style="display: none;"></div>
+        
+        <form id="loginForm">
+            <div class="mb-3">
+                <label for="password" class="form-label">رمز عبور ادمین:</label>
+                <input type="password" class="form-control" id="password" name="password" required>
+            </div>
+            <button type="submit" class="btn btn-login">ورود به پنل ادمین</button>
+        </form>
+        
+        <div class="back-link">
+            <a href="/">← بازگشت به صفحه اصلی</a>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const password = document.getElementById('password').value;
+            const errorAlert = document.getElementById('error-alert');
+            
+            try {
+                const response = await fetch('/admin/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ password: password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    window.location.href = '/admin';
+                } else {
+                    errorAlert.textContent = data.error || 'خطا در ورود';
+                    errorAlert.style.display = 'block';
+                }
+            } catch (error) {
+                errorAlert.textContent = 'خطا در ارتباط با سرور';
+                errorAlert.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
+'''
 
 def validate_model_access(api_key: str, model_name: str) -> bool:
     """بررسی می‌کند که آیا به مدل مشخص شده دسترسی وجود دارد یا خیر."""
@@ -888,16 +1044,106 @@ async def run_final_analysis_and_matching(user_id: int, history: list) -> str:
 # ==============================================================================
 app = Flask(__name__)
 CORS(app)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))  # کلید مخفی برای session ها
 
 @app.route('/')
 def serve_index():
     return send_from_directory('.', 'index.html')
 
+@app.route('/admin/login', methods=['POST'])
+def admin_login():
+    """ورود ادمین"""
+    try:
+        data = request.json
+        password = data.get('password', '')
+        
+        correct_password = get_admin_password()
+        
+        if password == correct_password:
+            session['admin_authenticated'] = True
+            session.permanent = True  # session دائمی تا مرورگر بسته شود
+            logger.info("Admin successfully logged in")
+            return jsonify({'message': 'ورود موفقیت‌آمیز'}), 200
+        else:
+            logger.warning("Failed admin login attempt")
+            return jsonify({'error': 'رمز عبور اشتباه است'}), 401
+            
+    except Exception as e:
+        logger.error(f"Error in admin login: {e}")
+        return jsonify({'error': 'خطا در سرور'}), 500
+
+@app.route('/admin/logout', methods=['POST', 'GET'])
+def admin_logout():
+    """خروج ادمین"""
+    # پاک کردن تمام session
+    session.clear()
+    logger.info("Admin logged out")
+    
+    # اگر GET request است، redirect به صفحه اصلی
+    if request.method == 'GET':
+        return redirect('/')
+    
+    # اگر POST request است، JSON response برگردانیم
+    return jsonify({'message': 'خروج موفقیت‌آمیز'}), 200
+
+@app.route('/admin/change-password', methods=['POST'])
+@require_admin_auth
+def admin_change_password():
+    """تغییر رمز عبور ادمین"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'داده‌ای ارسال نشده است'}), 400
+            
+        current_password = data.get('current_password', '')
+        new_password = data.get('new_password', '')
+        
+        # بررسی وجود رمز فعلی
+        if not current_password:
+            return jsonify({'error': 'رمز عبور فعلی وارد نشده است'}), 400
+            
+        # بررسی وجود رمز جدید
+        if not new_password:
+            return jsonify({'error': 'رمز عبور جدید وارد نشده است'}), 400
+        
+        correct_password = get_admin_password()
+        
+        # بررسی رمز فعلی
+        if current_password != correct_password:
+            logger.warning(f"Failed password change attempt - wrong current password")
+            return jsonify({'error': 'رمز عبور فعلی اشتباه است'}), 401
+        
+        # بررسی طول رمز جدید
+        if len(new_password) < 6:
+            return jsonify({'error': 'رمز عبور جدید باید حداقل 6 کاراکتر باشد'}), 400
+        
+        # ذخیره رمز جدید در دیتابیس
+        with engine.connect() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO public.settings (setting_key, setting_value) 
+                    VALUES ('ADMIN_PASSWORD', :password)
+                    ON CONFLICT (setting_key) 
+                    DO UPDATE SET setting_value = EXCLUDED.setting_value
+                """),
+                {"password": new_password}
+            )
+            conn.commit()
+        
+        logger.info("Admin password changed successfully")
+        return jsonify({'message': 'رمز عبور با موفقیت تغییر کرد'}), 200
+        
+    except Exception as e:
+        logger.error(f"Error changing admin password: {e}")
+        return jsonify({'error': 'خطا در تغییر رمز عبور'}), 500
+
 @app.route('/admin')
+@require_admin_auth
 def serve_admin():
     return send_from_directory('.', 'admin.html')
 
 @app.route('/admin/stats-page')
+@require_admin_auth
 def serve_stats():
     return send_from_directory('.', 'stats.html')
 
@@ -940,6 +1186,7 @@ def get_shared_chat(share_id):
         return jsonify({'error': 'خطا در دریافت چت اشتراکی'}), 500
 
 @app.route('/admin/stats')
+@require_admin_auth
 def admin_stats():
     """نمایش آمار کاربران"""
     try:
@@ -1005,6 +1252,7 @@ def admin_stats():
         return jsonify({'error': 'خطا در دریافت آمار'}), 500
 
 @app.route('/admin/recent-shared-chats')
+@require_admin_auth
 def admin_recent_shared_chats():
     """دریافت لیست 100 چت اشتراکی اخیر"""
     try:
@@ -1052,6 +1300,7 @@ def admin_recent_shared_chats():
         return jsonify({'error': 'خطا در دریافت لیست چت‌های اشتراکی'}), 500
 
 @app.route('/admin/all-chats')
+@require_admin_auth
 def admin_all_chats():
     """دریافت لیست چت‌ها با pagination"""
     try:
@@ -1168,6 +1417,7 @@ def admin_all_chats():
         return jsonify({'error': 'خطا در دریافت لیست چت‌ها'}), 500
 
 @app.route('/admin/data', methods=['GET', 'POST'])
+@require_admin_auth
 def admin_data():
     if request.method == 'GET':
         settings = {
