@@ -1510,16 +1510,24 @@ async def handle_web_message(web_user_id: str, user_message: str, request_obj=No
     except (json.JSONDecodeError, TypeError, AttributeError):
         pass
 
-    await save_conversation(db_user_id, updated_db_history)
-
     if is_signal:
+        # تولید گزارش نهایی
         final_report = await run_final_analysis_and_matching(db_user_id, updated_db_history)
+        
+        # جایگزینی JSON با گزارش نهایی در تاریخچه
+        updated_db_history[-1]["parts"] = [final_report]
+        
+        # ذخیره تاریخچه با گزارش نهایی
+        await save_conversation(db_user_id, updated_db_history)
+        
         # دریافت career_profile از دیتابیس
         updated_convo_data = await get_conversation(db_user_id)
         career_profile = updated_convo_data.get("career_profile")
         return final_report, career_profile
-    
-    return bot_response_text, None
+    else:
+        # ذخیره تاریخچه عادی
+        await save_conversation(db_user_id, updated_db_history)
+        return bot_response_text, None
 
 
 if __name__ == "__main__":
