@@ -1002,10 +1002,24 @@
             showTypingIndicator();
             try {
                 const response = await fetch(CHAT_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId, message: messageText, }), });
-                if (!response.ok) throw new Error('Network response was not ok.');
+                
+                if (!response.ok) {
+                    // بررسی خطای quota
+                    if (response.status === 429) {
+                        throw new Error('QUOTA_EXCEEDED');
+                    }
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
                 removeTypingIndicator();
-                addTypedMessage(data.reply, 'bot');
+                
+                // بررسی خطای quota در response
+                if (data.error_type === 'quota_exceeded' || (data.reply && data.reply.includes('محدودیت استفاده روزانه'))) {
+                    addTypedMessage(data.reply, 'bot');
+                } else {
+                    addTypedMessage(data.reply, 'bot');
+                }
                 
                 // ذخیره career_profile اگر موجود باشد
                 if (data.career_profile) {
@@ -1014,7 +1028,17 @@
             } catch (error) {
                 console.error('Error:', error);
                 removeTypingIndicator();
-                addMessage('متاسفانه خطایی در ارتباط با سرور رخ داد. لطفا دوباره تلاش کنید.', 'bot');
+                
+                // تشخیص نوع خطا و نمایش پیام مناسب
+                if (error.message === 'QUOTA_EXCEEDED') {
+                    addMessage('⚠️ محدودیت استفاده روزانه API تمام شده است. لطفاً فردا دوباره تلاش کنید یا پلن API خود را ارتقا دهید.', 'bot');
+                } else if (error.message.includes('Network response was not ok')) {
+                    addMessage('🌐 خطا در ارتباط با سرور. لطفاً اتصال اینترنت خود را بررسی کنید.', 'bot');
+                } else if (error.message.includes('Failed to fetch')) {
+                    addMessage('🔌 سرور در دسترس نیست. لطفاً چند لحظه صبر کنید و دوباره تلاش کنید.', 'bot');
+                } else {
+                    addMessage('❌ متاسفانه خطایی در ارتباط با سرور رخ داد. لطفا دوباره تلاش کنید.', 'bot');
+                }
             } finally {
                 sendButton.disabled = false; userInput.disabled = false; micButton.disabled = false;
                 userInput.focus();

@@ -899,25 +899,19 @@ async def llm_generate_with_retry(model, contents, tries=3, backoff=1.5):
             last_err = e
             error_msg = str(e)
             
-            # بررسی خطای کوتای
+            # بررسی خطای کوتای - فوراً متوقف می‌شویم
             if "429" in error_msg or "quota" in error_msg.lower() or "exceeded" in error_msg.lower():
-                logger.warning(f"API quota exceeded (attempt {i+1}/{tries}). Waiting longer before retry...")
-                # برای خطای کوتای، زمان انتظار بیشتری در نظر می‌گیریم
-                await asyncio.sleep(60 * (i + 1))  # 60, 120, 180 ثانیه
-                continue
+                logger.warning(f"API quota exceeded. Stopping retry attempts immediately.")
+                # فوراً پیام fallback برمی‌گردانیم
+                fallback_response = type('obj', (object,), {
+                    'text': "متاسفانه در حال حاضر به دلیل محدودیت استفاده روزانه، سرویس هوش مصنوعی در دسترس نیست. لطفاً فردا دوباره تلاش کنید یا پلن API خود را ارتقا دهید."
+                })
+                return fallback_response
             
             logger.warning(f"LLM call failed (attempt {i+1}/{tries}): {e}")
             await asyncio.sleep(backoff * (i + 1))
     
-    # اگر همه تلاش‌ها ناموفق بود، پیام مناسب برگردانیم
-    if "429" in str(last_err) or "quota" in str(last_err).lower():
-        logger.error("API quota exhausted. Returning fallback message.")
-        # ایجاد یک پاسخ fallback برای خطای کوتای
-        fallback_response = type('obj', (object,), {
-            'text': "متاسفانه در حال حاضر به دلیل محدودیت استفاده روزانه، سرویس هوش مصنوعی در دسترس نیست. لطفاً فردا دوباره تلاش کنید یا پلن API خود را ارتقا دهید."
-        })
-        return fallback_response
-    
+    # اگر همه تلاش‌ها ناموفق بود (غیر از quota)
     raise last_err
 
 def sanitize_history(raw_history: list) -> list:
@@ -1478,8 +1472,17 @@ def chat():
         reply, career_profile = asyncio.run(handle_web_message(web_user_id, user_message, request))
         return jsonify({'reply': reply, 'career_profile': career_profile})
     except Exception as e:
+        error_msg = str(e)
         logger.error(f"Error in /chat endpoint for user {web_user_id}: {e}", exc_info=True)
-        return jsonify({'reply': '⚠️ یک خطای داخلی در سرور رخ داد.'}), 500
+        
+        # بررسی خطای quota
+        if "429" in error_msg or "quota" in error_msg.lower() or "exceeded" in error_msg.lower():
+            return jsonify({
+                'reply': '⚠️ متاسفانه به دلیل محدودیت استفاده روزانه، سرویس هوش مصنوعی در حال حاضر در دسترس نیست. لطفاً فردا دوباره تلاش کنید یا پلن API خود را ارتقا دهید.',
+                'error_type': 'quota_exceeded'
+            }), 429
+        else:
+            return jsonify({'reply': '⚠️ یک خطای داخلی در سرور رخ داد.'}), 500
 
 async def handle_web_message(web_user_id: str, user_message: str, request_obj=None) -> tuple[str, dict]:
     # استخراج اطلاعات کاربر از درخواست
