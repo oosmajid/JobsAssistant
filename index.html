@@ -1041,7 +1041,10 @@
                 }
             } finally {
                 sendButton.disabled = false; userInput.disabled = false; micButton.disabled = false;
-                userInput.focus();
+                // فقط در دسکتاپ focus کنیم تا کیبورد موبایل باز نشود
+                if (window.innerWidth > 768 && !/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                    userInput.focus();
+                }
             }
         }
         sendButton.addEventListener('click', sendMessage);
