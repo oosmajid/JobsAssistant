@@ -659,14 +659,24 @@
             const messageElement = document.createElement('div');
             messageElement.classList.add('message', sender === 'user' ? 'user-message' : 'bot-message');
             
-            // تبدیل خط‌های جدید به <br> برای همه پیام‌ها
+            // تبدیل خط‌های جدید به <br> و تبدیل **text** به <strong>text</strong>
+            let processedText = text;
+            
             if (sender === 'bot') {
                 // برای متن‌های bot که از قبل فرمت‌بندی شده‌اند
-                messageElement.innerHTML = text.replace(/\n/g, '<br>');
+                // تبدیل **text** به <strong>text</strong>
+                processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                // تبدیل خط‌های جدید به <br>
+                processedText = processedText.replace(/\n/g, '<br>');
+                messageElement.innerHTML = processedText;
             } else {
                 // برای پیام‌های کاربر escape کردن و تبدیل خط‌های جدید
                 const sanitizedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                messageElement.innerHTML = sanitizedText.replace(/\n/g, '<br>');
+                // تبدیل **text** به <strong>text</strong>
+                processedText = sanitizedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                // تبدیل خط‌های جدید به <br>
+                processedText = processedText.replace(/\n/g, '<br>');
+                messageElement.innerHTML = processedText;
             }
             
             if (sender === 'user') {
@@ -748,9 +758,33 @@
                 showChatInfo(data);
                 
                 // نمایش پیام‌ها
-                data.conversation.forEach(message => {
-                    addMessage(message.text, message.role);
-                });
+                if (data.conversation && Array.isArray(data.conversation)) {
+                    data.conversation.forEach(message => {
+                        // بررسی فرمت‌های مختلف پیام
+                        let text = '';
+                        let role = '';
+                        
+                        if (message.parts && Array.isArray(message.parts)) {
+                            // فرمت Gemini (parts array)
+                            text = message.parts.join(' ');
+                            role = message.role === 'model' ? 'bot' : 'user';
+                        } else if (message.text) {
+                            // فرمت ساده (text field)
+                            text = message.text;
+                            role = message.role === 'model' ? 'bot' : 'user';
+                        } else if (typeof message === 'string') {
+                            // اگر message خودش یک string است
+                            text = message;
+                            role = 'user'; // پیش‌فرض
+                        }
+                        
+                        if (text && role) {
+                            addMessage(text, role);
+                        }
+                    });
+                } else {
+                    console.error('Invalid conversation data format:', data.conversation);
+                }
                 
             } catch (error) {
                 console.error('Error loading shared chat:', error);

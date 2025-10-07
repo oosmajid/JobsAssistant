@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>آمار کاربران - هزارجاب</title>
+    <title>همه چت‌های کاربران - هزارجاب</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -28,41 +28,104 @@
             text-align: center;
             margin-bottom: 30px;
         }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .stat-card {
-            background-color: #f8f9fa;
+        .chats-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: #fff;
             border-radius: 8px;
-            padding: 20px;
-            border-left: 4px solid #007bff;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
-        .stat-card h3 {
-            margin-top: 0;
-            color: #007bff;
-        }
-        .stat-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 0;
+        .chats-table th,
+        .chats-table td {
+            padding: 12px 15px;
+            text-align: right;
             border-bottom: 1px solid #e9ecef;
         }
-        .stat-item:last-child {
+        .chats-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+            font-size: 0.9em;
+        }
+        .chats-table tr:hover {
+            background-color: #f8f9fa;
+        }
+        .chats-table tr:last-child td {
             border-bottom: none;
         }
-        .stat-label {
+        .share-link {
+            color: #007bff;
+            text-decoration: none;
             font-weight: 500;
+            padding: 6px 12px;
+            background-color: #e3f2fd;
+            border-radius: 6px;
+            display: inline-block;
+            transition: all 0.2s;
         }
-        .stat-value {
+        .share-link:hover {
             background-color: #007bff;
             color: white;
+            text-decoration: none;
+        }
+        .status-badge {
             padding: 4px 8px;
             border-radius: 12px;
-            font-size: 0.9em;
+            font-size: 0.8em;
+            font-weight: 500;
+        }
+        .status-active {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status-expired {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .view-count {
+            background-color: #e9ecef;
+            color: #495057;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 500;
+        }
+        .date-time {
+            font-size: 0.85em;
+            color: #6c757d;
+        }
+        .load-more-container {
+            text-align: center;
+            padding: 20px;
+        }
+        .load-more-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            transition: background-color 0.2s;
+        }
+        .load-more-btn:hover {
+            background-color: #0056b3;
+        }
+        .load-more-btn:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .loading-more {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #6c757d;
+        }
+        .loading-more.show {
+            display: block;
         }
         .loading {
             text-align: center;
@@ -80,11 +143,17 @@
             background-color: #28a745;
             color: white;
             border: none;
-            padding: 10px 20px;
+            padding: 0 20px;
             border-radius: 6px;
             cursor: pointer;
             font-size: 1em;
             margin-bottom: 20px;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            height: 40px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
         }
         .refresh-btn:hover {
             background-color: #218838;
@@ -93,13 +162,18 @@
             background-color: #6c757d;
             color: white;
             border: none;
-            padding: 10px 20px;
+            padding: 0 20px;
             border-radius: 6px;
             cursor: pointer;
             font-size: 1em;
             margin-bottom: 20px;
             text-decoration: none;
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            height: 40px;
+            box-sizing: border-box;
         }
         .back-btn:hover {
             background-color: #5a6268;
@@ -108,126 +182,227 @@
 </head>
 <body>
     <div class="container">
-        <h1>📊 آمار کاربران هزارجاب</h1>
+        <h1>💬 همه چت‌های کاربران هزارجاب</h1>
         
         <div>
             <a href="/admin" class="back-btn">← بازگشت به پنل مدیریت</a>
-            <button class="refresh-btn" onclick="loadStats()">🔄 بروزرسانی آمار</button>
+            <button class="refresh-btn" onclick="loadAllChats()">🔄 بروزرسانی لیست</button>
         </div>
         
         <div id="loading" class="loading">
-            در حال بارگذاری آمار...
+            در حال بارگذاری چت‌ها...
         </div>
         
         <div id="error" class="error" style="display: none;"></div>
         
-        <div id="stats-content" style="display: none;">
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <h3>📈 آمار کلی</h3>
-                    <div class="stat-item">
-                        <span class="stat-label">کل کاربران:</span>
-                        <span class="stat-value" id="total-users">-</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-label">کاربران فعال (24 ساعت):</span>
-                        <span class="stat-value" id="active-users">-</span>
-                    </div>
-                </div>
-                
-                <div class="stat-card">
-                    <h3>🌐 مرورگرها</h3>
-                    <div id="browser-stats"></div>
-                </div>
-                
-                <div class="stat-card">
-                    <h3>💻 سیستم عامل</h3>
-                    <div id="os-stats"></div>
-                </div>
-                
-                <div class="stat-card">
-                    <h3>🌍 کشورها</h3>
-                    <div id="country-stats"></div>
-                </div>
-                
-                <div class="stat-card">
-                    <h3>📱 نوع دستگاه</h3>
-                    <div id="device-stats"></div>
-                </div>
+        <div id="chats-content" style="display: none;">
+            <div id="chats-summary" style="margin-bottom: 20px; padding: 15px; background-color: #e3f2fd; border-radius: 8px; color: #1976d2;">
+                <strong>📊 خلاصه:</strong> <span id="total-count">-</span> چت موجود است
+            </div>
+            
+            <table class="chats-table">
+                <thead>
+                    <tr>
+                        <th>شناسه چت</th>
+                        <th>کاربر</th>
+                        <th>نام کاربر</th>
+                        <th>تاریخ ایجاد</th>
+                        <th>آخرین بروزرسانی</th>
+                        <th>گزارش تولید شده</th>
+                        <th>وضعیت اشتراک</th>
+                        <th>تعداد بازدید</th>
+                        <th>لینک اشتراک</th>
+                    </tr>
+                </thead>
+                <tbody id="chats-table-body">
+                    <!-- داده‌ها اینجا لود می‌شوند -->
+                </tbody>
+            </table>
+            
+            <div class="load-more-container" id="load-more-container" style="display: none;">
+                <button class="load-more-btn" id="load-more-btn" onclick="loadMoreChats()">
+                    📥 بارگذاری چت‌های بیشتر
+                </button>
+            </div>
+            
+            <div class="loading-more" id="loading-more">
+                در حال بارگذاری چت‌های بیشتر...
             </div>
         </div>
     </div>
 
     <script>
-        async function loadStats() {
+        let currentOffset = 0;
+        const pageSize = 50; // تعداد چت‌ها در هر صفحه
+        let hasMoreData = true;
+        
+        async function loadAllChats() {
             const loadingEl = document.getElementById('loading');
             const errorEl = document.getElementById('error');
-            const contentEl = document.getElementById('stats-content');
+            const contentEl = document.getElementById('chats-content');
             
             loadingEl.style.display = 'block';
             errorEl.style.display = 'none';
             contentEl.style.display = 'none';
             
+            // Reset pagination
+            currentOffset = 0;
+            hasMoreData = true;
+            
             try {
-                const response = await fetch('/admin/stats');
+                const response = await fetch(`/admin/all-chats?offset=${currentOffset}&limit=${pageSize}`);
                 if (!response.ok) {
-                    throw new Error('خطا در دریافت آمار');
+                    throw new Error('خطا در دریافت چت‌ها');
                 }
                 
                 const data = await response.json();
-                displayStats(data);
+                displayAllChats(data, true); // true = replace existing data
                 
             } catch (error) {
-                console.error('Error loading stats:', error);
-                errorEl.textContent = `خطا در بارگذاری آمار: ${error.message}`;
+                console.error('Error loading all chats:', error);
+                errorEl.textContent = `خطا در بارگذاری چت‌ها: ${error.message}`;
                 errorEl.style.display = 'block';
             } finally {
                 loadingEl.style.display = 'none';
             }
         }
         
-        function displayStats(data) {
-            // آمار کلی
-            document.getElementById('total-users').textContent = data.total_users || 0;
-            document.getElementById('active-users').textContent = data.active_users_24h || 0;
+        async function loadMoreChats() {
+            if (!hasMoreData) return;
             
-            // آمار مرورگرها
-            displayStatItems('browser-stats', data.browser_stats || []);
+            const loadMoreBtn = document.getElementById('load-more-btn');
+            const loadingMore = document.getElementById('loading-more');
             
-            // آمار سیستم عامل
-            displayStatItems('os-stats', data.os_stats || []);
+            loadMoreBtn.style.display = 'none';
+            loadingMore.classList.add('show');
             
-            // آمار کشورها
-            displayStatItems('country-stats', data.country_stats || []);
-            
-            // آمار نوع دستگاه
-            displayStatItems('device-stats', data.device_stats || []);
-            
-            document.getElementById('stats-content').style.display = 'block';
+            try {
+                currentOffset += pageSize;
+                const response = await fetch(`/admin/all-chats?offset=${currentOffset}&limit=${pageSize}`);
+                
+                if (!response.ok) {
+                    throw new Error('خطا در دریافت چت‌های بیشتر');
+                }
+                
+                const data = await response.json();
+                displayAllChats(data, false); // false = append to existing data
+                
+                // اگر تعداد داده‌های دریافتی کمتر از pageSize باشد، یعنی دیگر داده‌ای نیست
+                if (data.all_chats.length < pageSize) {
+                    hasMoreData = false;
+                    document.getElementById('load-more-container').style.display = 'none';
+                }
+                
+            } catch (error) {
+                console.error('Error loading more chats:', error);
+                currentOffset -= pageSize; // Rollback offset
+            } finally {
+                loadingMore.classList.remove('show');
+                if (hasMoreData) {
+                    loadMoreBtn.style.display = 'inline-block';
+                }
+            }
         }
         
-        function displayStatItems(containerId, items) {
-            const container = document.getElementById(containerId);
-            container.innerHTML = '';
-            
-            if (items.length === 0) {
-                container.innerHTML = '<div class="stat-item">هیچ داده‌ای موجود نیست</div>';
-                return;
+        function displayAllChats(data, replaceData = true) {
+            // نمایش تعداد کل (فقط در اولین بار)
+            if (replaceData) {
+                document.getElementById('total-count').textContent = data.total_count || 0;
             }
             
-            items.forEach(item => {
-                const statItem = document.createElement('div');
-                statItem.className = 'stat-item';
-                statItem.innerHTML = `
-                    <span class="stat-label">${item.name || item.browser_name || item.operating_system || item.country || item.device_type}</span>
-                    <span class="stat-value">${item.count}</span>
+            // نمایش جدول
+            const tableBody = document.getElementById('chats-table-body');
+            const loadMoreContainer = document.getElementById('load-more-container');
+            
+            if (replaceData) {
+                tableBody.innerHTML = '';
+            }
+            
+            if (data.all_chats.length === 0 && replaceData) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="9" style="text-align: center; padding: 40px; color: #6c757d;">
+                            هیچ چتی موجود نیست
+                        </td>
+                    </tr>
                 `;
-                container.appendChild(statItem);
-            });
+                loadMoreContainer.style.display = 'none';
+            } else if (data.all_chats.length > 0) {
+                data.all_chats.forEach(chat => {
+                    const row = document.createElement('tr');
+                    
+                    // فرمت کردن تاریخ‌ها
+                    const createdDate = chat.created_at ? new Date(chat.created_at).toLocaleDateString('fa-IR') : '-';
+                    const createdTime = chat.created_at ? new Date(chat.created_at).toLocaleTimeString('fa-IR') : '-';
+                    const updatedDate = chat.updated_at ? new Date(chat.updated_at).toLocaleDateString('fa-IR') : '-';
+                    const updatedTime = chat.updated_at ? new Date(chat.updated_at).toLocaleTimeString('fa-IR') : '-';
+                    const reportDate = chat.report_generated ? new Date(chat.report_generated).toLocaleDateString('fa-IR') : '-';
+                    const reportTime = chat.report_generated ? new Date(chat.report_generated).toLocaleTimeString('fa-IR') : '-';
+                    const lastViewedDate = chat.last_viewed_at ? new Date(chat.last_viewed_at).toLocaleDateString('fa-IR') : '-';
+                    const lastViewedTime = chat.last_viewed_at ? new Date(chat.last_viewed_at).toLocaleTimeString('fa-IR') : '-';
+                    
+                    // وضعیت اشتراک
+                    let shareStatus = '';
+                    if (chat.has_share) {
+                        if (chat.has_active_share) {
+                            shareStatus = '<span class="status-badge status-active">فعال</span>';
+                        } else {
+                            shareStatus = '<span class="status-badge status-expired">منقضی شده</span>';
+                        }
+                    } else {
+                        shareStatus = '<span style="color: #6c757d;">ندارد</span>';
+                    }
+                    
+                    // لینک اشتراک
+                    let shareLink = '';
+                    if (chat.share_url && chat.share_url.startsWith('/shared/')) {
+                        shareLink = `<a href="${chat.share_url}" class="share-link" target="_blank">🔗 باز کردن چت</a>`;
+                    } else if (chat.share_url) {
+                        shareLink = `<span style="color: #6c757d;">${chat.share_url}</span>`;
+                    } else {
+                        shareLink = '<span style="color: #6c757d;">-</span>';
+                    }
+                    
+                    row.innerHTML = `
+                        <td style="font-family: monospace; font-size: 0.85em;">${chat.conversation_id}</td>
+                        <td style="font-family: monospace; font-size: 0.85em;">${chat.telegram_user_id}</td>
+                        <td>${chat.first_name}</td>
+                        <td>
+                            <div class="date-time">${createdDate}</div>
+                            <div class="date-time">${createdTime}</div>
+                        </td>
+                        <td>
+                            <div class="date-time">${updatedDate}</div>
+                            <div class="date-time">${updatedTime}</div>
+                        </td>
+                        <td>
+                            ${chat.report_generated ? `
+                                <div class="date-time">${reportDate}</div>
+                                <div class="date-time">${reportTime}</div>
+                            ` : '<span style="color: #6c757d;">تولید نشده</span>'}
+                        </td>
+                        <td>${shareStatus}</td>
+                        <td>
+                            <span class="view-count">${chat.view_count}</span>
+                        </td>
+                        <td>${shareLink}</td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+                
+                // نمایش دکمه load more اگر داده‌های بیشتری وجود دارد
+                if (data.all_chats.length >= pageSize && hasMoreData) {
+                    loadMoreContainer.style.display = 'block';
+                } else {
+                    loadMoreContainer.style.display = 'none';
+                }
+            }
+            
+            document.getElementById('chats-content').style.display = 'block';
         }
         
         // بارگذاری اولیه
-        window.addEventListener('load', loadStats);
+        window.addEventListener('load', loadAllChats);
     </script>
 </body>
 </html>

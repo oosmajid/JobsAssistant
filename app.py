@@ -152,6 +152,18 @@ try:
             ALTER TABLE public.shared_chats 
             ADD COLUMN IF NOT EXISTS career_profile JSONB
         """))
+        
+        # --- اضافه کردن ستون‌های created_at و updated_at به جدول conversations اگر وجود نداشته باشند ---
+        conn.execute(text("""
+            ALTER TABLE public.conversations 
+            ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()
+        """))
+        
+        conn.execute(text("""
+            ALTER TABLE public.conversations 
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()
+        """))
+        
         conn.commit()
         logger.info("Shared chats table created/verified successfully.")
         
@@ -603,49 +615,75 @@ def _sync_get_shared_chat(share_id: str) -> dict:
             conn.execute(text("""
                 UPDATE public.shared_chats 
                 SET view_count = view_count + 1, last_viewed_at = NOW()
-                WHERE share_id = :share_id AND expires_at > NOW()
+                WHERE share_id = :share_id
             """), {"share_id": share_id})
             
-            # دریافت داده‌های چت
-            stmt = text("""
-                SELECT conversation_data, career_profile, created_at, view_count
+            # دریافت اطلاعات shared_chat
+            shared_chat_stmt = text("""
+                SELECT original_user_id, created_at, view_count
                 FROM public.shared_chats 
-                WHERE share_id = :share_id AND expires_at > NOW()
+                WHERE share_id = :share_id
             """)
             
-            result = conn.execute(stmt, {"share_id": share_id}).mappings().first()
+            shared_result = conn.execute(shared_chat_stmt, {"share_id": share_id}).mappings().first()
+            
+            if not shared_result:
+                return None
+            
+            # دریافت داده‌های live از جدول conversations
+            user_id_stmt = text("""
+                SELECT id FROM public.users 
+                WHERE telegram_user_id = :user_id
+            """)
+            
+            user_id = conn.execute(user_id_stmt, {"user_id": shared_result["original_user_id"]}).scalar_one_or_none()
+            
+            if not user_id:
+                return None
+            
+            # دریافت conversation_history و career_profile از جدول conversations
+            conversation_stmt = text("""
+                SELECT conversation_history, career_profile 
+                FROM public.conversations 
+                WHERE user_id = :user_id
+            """)
+            
+            conv_result = conn.execute(conversation_stmt, {"user_id": user_id}).mappings().first()
+            
+            if not conv_result:
+                return None
+            
+            conversation_data = conv_result["conversation_history"]
+            career_profile = conv_result["career_profile"]
+            
+            logger.info(f"Raw conversation_data type: {type(conversation_data)}")
+            
+            # اگر conversation_data یک string است، آن را parse کنیم
+            if isinstance(conversation_data, str):
+                try:
+                    conversation_data = json.loads(conversation_data)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse conversation_data JSON: {e}")
+                    return None
+            
+            # اگر career_profile یک string است، آن را parse کنیم
+            if isinstance(career_profile, str):
+                try:
+                    career_profile = json.loads(career_profile)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse career_profile JSON: {e}")
+                    career_profile = None
+            
+            logger.info(f"Processed conversation_data type: {type(conversation_data)}, length: {len(conversation_data) if isinstance(conversation_data, list) else 'N/A'}")
+            
             conn.commit()
             
-            if result:
-                conversation_data = result["conversation_data"]
-                career_profile = result["career_profile"]
-                logger.info(f"Raw conversation_data type: {type(conversation_data)}")
-                
-                # اگر conversation_data یک string است، آن را parse کنیم
-                if isinstance(conversation_data, str):
-                    try:
-                        conversation_data = json.loads(conversation_data)
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Failed to parse conversation_data JSON: {e}")
-                        return None
-                
-                # اگر career_profile یک string است، آن را parse کنیم
-                if isinstance(career_profile, str):
-                    try:
-                        career_profile = json.loads(career_profile)
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Failed to parse career_profile JSON: {e}")
-                        career_profile = None
-                
-                logger.info(f"Processed conversation_data type: {type(conversation_data)}, length: {len(conversation_data) if isinstance(conversation_data, list) else 'N/A'}")
-                
-                return {
-                    "conversation": conversation_data,
-                    "career_profile": career_profile,
-                    "created_at": result["created_at"],
-                    "view_count": result["view_count"]
-                }
-            return None
+            return {
+                "conversation": conversation_data,
+                "career_profile": career_profile,
+                "created_at": shared_result["created_at"],
+                "view_count": shared_result["view_count"]
+            }
     except Exception as e:
         logger.error(f"Failed to get shared chat: {e}", exc_info=True)
         return None
@@ -904,6 +942,169 @@ def admin_stats():
     except Exception as e:
         logger.error(f"Error getting admin stats: {e}", exc_info=True)
         return jsonify({'error': 'خطا در دریافت آمار'}), 500
+
+@app.route('/admin/recent-shared-chats')
+def admin_recent_shared_chats():
+    """دریافت لیست 100 چت اشتراکی اخیر"""
+    try:
+        with engine.connect() as conn:
+            # دریافت 100 چت اشتراکی اخیر به ترتیب جدیدترین
+            shared_chats = conn.execute(text("""
+                SELECT 
+                    share_id,
+                    original_user_id,
+                    created_at,
+                    view_count,
+                    last_viewed_at,
+                    expires_at,
+                    CASE 
+                        WHEN expires_at > NOW() THEN true 
+                        ELSE false 
+                    END as is_active
+                FROM public.shared_chats 
+                ORDER BY created_at DESC 
+                LIMIT 100
+            """)).mappings().all()
+            
+            # تبدیل به لیست دیکشنری
+            chats_list = []
+            for row in shared_chats:
+                chat_data = {
+                    'share_id': row['share_id'],
+                    'original_user_id': row['original_user_id'],
+                    'created_at': row['created_at'].isoformat() if row['created_at'] else None,
+                    'view_count': row['view_count'],
+                    'last_viewed_at': row['last_viewed_at'].isoformat() if row['last_viewed_at'] else None,
+                    'expires_at': row['expires_at'].isoformat() if row['expires_at'] else None,
+                    'is_active': row['is_active'],
+                    'share_url': f"/shared/{row['share_id']}"
+                }
+                chats_list.append(chat_data)
+            
+            return jsonify({
+                'shared_chats': chats_list,
+                'total_count': len(chats_list)
+            })
+            
+    except Exception as e:
+        logger.error(f"Error getting recent shared chats: {e}", exc_info=True)
+        return jsonify({'error': 'خطا در دریافت لیست چت‌های اشتراکی'}), 500
+
+@app.route('/admin/all-chats')
+def admin_all_chats():
+    """دریافت لیست چت‌ها با pagination"""
+    try:
+        # دریافت پارامترهای pagination
+        offset = request.args.get('offset', 0, type=int)
+        limit = request.args.get('limit', 50, type=int)
+        
+        with engine.connect() as conn:
+            # دریافت تعداد کل چت‌ها
+            total_count = conn.execute(text("""
+                SELECT COUNT(*) FROM public.conversations
+            """)).scalar_one()
+            
+            # دریافت چت‌ها با pagination
+            all_chats = conn.execute(text("""
+                SELECT 
+                    c.id as conversation_id,
+                    c.user_id,
+                    c.created_at,
+                    c.updated_at,
+                    c.report_generated,
+                    u.telegram_user_id,
+                    u.first_name,
+                    sc.share_id,
+                    sc.view_count,
+                    sc.last_viewed_at,
+                    sc.expires_at,
+                    CASE 
+                        WHEN sc.share_id IS NOT NULL AND sc.expires_at > NOW() THEN true 
+                        ELSE false 
+                    END as has_active_share,
+                    CASE 
+                        WHEN sc.share_id IS NOT NULL THEN true 
+                        ELSE false 
+                    END as has_share
+                FROM public.conversations c
+                LEFT JOIN public.users u ON c.user_id = u.id
+                LEFT JOIN public.shared_chats sc ON sc.original_user_id = u.telegram_user_id
+                ORDER BY c.updated_at DESC 
+                LIMIT :limit OFFSET :offset
+            """), {"limit": limit, "offset": offset}).mappings().all()
+            
+            # تبدیل به لیست دیکشنری
+            chats_list = []
+            for row in all_chats:
+                # اگر لینک اشتراکی وجود ندارد، یکی ایجاد می‌کنیم
+                share_url = None
+                share_id = row['share_id']
+                
+                if not share_id:
+                    # ایجاد لینک اشتراکی جدید
+                    try:
+                        # دریافت conversation_data
+                        conv_data = conn.execute(text("""
+                            SELECT conversation_history FROM public.conversations 
+                            WHERE id = :conv_id
+                        """), {"conv_id": row['conversation_id']}).scalar_one_or_none()
+                        
+                        if conv_data:
+                            # تبدیل به فرمت مناسب
+                            if isinstance(conv_data, str):
+                                try:
+                                    conversation_data = json.loads(conv_data)
+                                except json.JSONDecodeError:
+                                    conversation_data = []
+                            elif isinstance(conv_data, list):
+                                conversation_data = conv_data
+                            else:
+                                conversation_data = []
+                            
+                            # بررسی اینکه آیا conversation_data خالی نیست
+                            if conversation_data and len(conversation_data) > 0:
+                                # ایجاد لینک اشتراکی
+                                share_id = _sync_create_shared_chat(
+                                    row['telegram_user_id'], 
+                                    conversation_data
+                                )
+                                share_url = f"/shared/{share_id}"
+                            else:
+                                share_url = "چت خالی است"
+                        else:
+                            share_url = "چت خالی است"
+                    except Exception as e:
+                        logger.error(f"Error creating share link for chat {row['conversation_id']}: {e}")
+                        share_url = "خطا در ایجاد لینک"
+                else:
+                    share_url = f"/shared/{share_id}"
+                
+                chat_data = {
+                    'conversation_id': row['conversation_id'],
+                    'user_id': row['user_id'],
+                    'telegram_user_id': row['telegram_user_id'],
+                    'first_name': row['first_name'] or 'نامشخص',
+                    'created_at': row['created_at'].isoformat() if row['created_at'] else None,
+                    'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None,
+                    'report_generated': row['report_generated'].isoformat() if row['report_generated'] else None,
+                    'share_id': share_id,
+                    'view_count': row['view_count'] or 0,
+                    'last_viewed_at': row['last_viewed_at'].isoformat() if row['last_viewed_at'] else None,
+                    'expires_at': row['expires_at'].isoformat() if row['expires_at'] else None,
+                    'has_active_share': row['has_active_share'],
+                    'has_share': row['has_share'],
+                    'share_url': share_url
+                }
+                chats_list.append(chat_data)
+            
+            return jsonify({
+                'all_chats': chats_list,
+                'total_count': total_count
+            })
+            
+    except Exception as e:
+        logger.error(f"Error getting all chats: {e}", exc_info=True)
+        return jsonify({'error': 'خطا در دریافت لیست چت‌ها'}), 500
 
 @app.route('/admin/data', methods=['GET', 'POST'])
 def admin_data():
