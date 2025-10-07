@@ -985,13 +985,12 @@ async def handle_web_message(web_user_id: str, user_message: str, request_obj=No
 
 if __name__ == "__main__":
     # ابتدا بررسی می‌کنیم که آیا راه‌اندازی اولیه موفقیت‌آمیز بوده یا خیر
-    if not all([engine, llm_model, embedding_model]):
-        logger.error("="*60)
+    if not all([engine, llm_model]):
+        logger.error("="*59)
         logger.error("!!!   APPLICATION FAILED TO INITIALIZE   !!!")
-        logger.error("یکی از کامپوننت‌های اصلی (دیتابیس، مدل زبان، مدل امبدینگ) مقداردهی نشده است.")
+        logger.error("یکی از کامپوننت‌های اصلی (دیتابیس یا مدل زبان) مقداردهی نشده است.")
         logger.error("لطفاً به خطاهای بالاتر در ترمینال دقت کنید تا دلیل اصلی را پیدا کنید.")
-        logger.error("دلایل رایج: کلید API نامعتبر، مشکل در اتصال به دیتابیس یا مشکلات شبکه.")
-        logger.error("="*60)
+        logger.error("="*59)
         sys.exit(1)
 
     if "YOUR_GEMINI_API_KEY" in str(GEMINI_API_KEY) or "YOUR_PROJECT_REF" in PROJECT_REF:
