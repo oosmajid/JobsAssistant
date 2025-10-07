@@ -29,8 +29,9 @@ from sentence_transformers import SentenceTransformer
 # فایل prompts.py فقط برای اولین راه‌اندازی (seeding) استفاده می‌شود
 import prompts as prompts_file
 
-EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "intfloat/multilingual-e5-small")
+# EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "intfloat/multilingual-e5-small")
 # EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "paraphrase-multilingual-mpnet-base-v2")
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 # تنظیمات لاگ‌گیری
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
