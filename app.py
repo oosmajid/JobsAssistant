@@ -193,6 +193,7 @@ try:
 
     # embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME, device="cpu")
     # logger.info("Embedding model loaded successfully.")
+    embedding_model = None
 
 except Exception as e:
     logger.error(f"CRITICAL INITIALIZATION FAILED: {e}", exc_info=True)
@@ -714,7 +715,8 @@ async def build_personality_paragraph(career_profile: dict) -> str:
 # 7) Final Analysis & Matching
 # ==============================================================================
 async def run_final_analysis_and_matching(user_id: int, history: list) -> str:
-    if not all([llm_model, embedding_model, engine]):
+    # if not all([llm_model, embedding_model, engine]):
+    if not all([llm_model, engine]):
         return PROMPTS.get('SYSTEM_ERROR_MESSAGE', 'System error.')
     try:
         initial_message = PROMPTS.get('ANALYSIS_START_MESSAGE', 'Starting analysis...')
