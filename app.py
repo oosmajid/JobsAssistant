@@ -21,7 +21,7 @@ import secrets
 from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-
+import os
 from sqlalchemy import create_engine, text
 import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
@@ -29,6 +29,8 @@ from sentence_transformers import SentenceTransformer
 # فایل prompts.py فقط برای اولین راه‌اندازی (seeding) استفاده می‌شود
 import prompts as prompts_file
 
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "intfloat/multilingual-e5-small")
+# EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "paraphrase-multilingual-mpnet-base-v2")
 # تنظیمات لاگ‌گیری
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -158,7 +160,7 @@ try:
     )
     logger.info(f"Gemini API configured successfully with model: {SELECTED_MODEL_NAME}")
 
-    embedding_model = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
+    embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME, device="cpu")
     logger.info("Embedding model loaded successfully.")
 
 except Exception as e:
