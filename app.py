@@ -3,7 +3,7 @@
 # 0) Secrets & Project Info
 # ==============================================================================
 # GEMINI_API_KEY از دیتابیس خوانده می‌شود
-GEMINI_API_KEY = None
+GEMINI_API_KEY = "AIzaSyCxYoe12F2AZjL5PhE-vDSSQtpnFP7rIeg"
 PROJECT_REF    = "agurgrbrcroygnfnijbv"
 DB_PASSWORD    = "Z8A1lT49f0CXn2Ox"
 
@@ -24,14 +24,14 @@ from flask_cors import CORS
 import os
 from sqlalchemy import create_engine, text
 import google.generativeai as genai
-from sentence_transformers import SentenceTransformer
+# from sentence_transformers import SentenceTransformer
 
 # فایل prompts.py فقط برای اولین راه‌اندازی (seeding) استفاده می‌شود
 import prompts as prompts_file
 
 # EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "intfloat/multilingual-e5-small")
 # EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "paraphrase-multilingual-mpnet-base-v2")
-EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+# EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 # تنظیمات لاگ‌گیری
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -74,6 +74,36 @@ def validate_model_access(api_key: str, model_name: str) -> bool:
     except Exception as e:
         logger.error(f"Validation failed for {model_name}: {e}", exc_info=True)
         return False
+
+def embed_with_gemini(text: str) -> list[float]:
+    """
+    برمی‌گرداند: لیست float (بردار امبدینگ) از سرویس Gemini
+    مدل: text-embedding-004
+    """
+    genai.configure(api_key=GEMINI_API_KEY)
+    resp = genai.embed_content(
+        model="models/text-embedding-004",  # یا "text-embedding-004" در برخی ریلیزها
+        content=text
+    )
+    # سازگار با دو فرمت رایج خروجی کتابخانه:
+    # 1) dict با resp["embedding"] یا resp["embedding"]["values"]
+    # 2) آبجکت با .embedding یا .values
+    emb = None
+    if isinstance(resp, dict):
+        emb = resp.get("embedding", resp.get("data"))  # بعضی ورژن‌ها
+    else:
+        emb = getattr(resp, "embedding", None) or getattr(resp, "data", None)
+
+    if isinstance(emb, dict):
+        values = emb.get("values") or emb.get("embedding")
+    elif hasattr(emb, "values"):
+        values = emb.values
+    else:
+        values = emb
+
+    if not values or not isinstance(values, (list, tuple)):
+        raise RuntimeError(f"Embedding response malformed: {type(resp)} -> {resp}")
+    return [float(x) for x in values]
 
 def _sync_get_or_create_setting(conn, key: str, default_value: str) -> str:
     """یک تنظیم را از دیتابیس می‌خواند یا اگر وجود نداشت، با مقدار پیش‌فرض آن را ایجاد می‌کند."""
@@ -161,8 +191,8 @@ try:
     )
     logger.info(f"Gemini API configured successfully with model: {SELECTED_MODEL_NAME}")
 
-    embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME, device="cpu")
-    logger.info("Embedding model loaded successfully.")
+    # embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME, device="cpu")
+    # logger.info("Embedding model loaded successfully.")
 
 except Exception as e:
     logger.error(f"CRITICAL INITIALIZATION FAILED: {e}", exc_info=True)
@@ -693,7 +723,8 @@ async def run_final_analysis_and_matching(user_id: int, history: list) -> str:
         career_profile, jz, jz_just = score_with_ebp(evidence_json)
         personality_paragraph = await build_personality_paragraph(career_profile)
         
-        final_user_vector = embedding_model.encode(personality_paragraph).tolist()
+        # final_user_vector = embedding_model.encode(personality_paragraph).tolist()
+        final_user_vector = embed_with_gemini(personality_paragraph)
 
         def _sync_db_matching():
             with engine.connect() as conn:
