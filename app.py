@@ -73,8 +73,42 @@ def validate_model_access(api_key: str, model_name: str) -> bool:
         logger.info(f"Successfully validated access to {model_name}.")
         return True
     except Exception as e:
-        logger.error(f"Validation failed for {model_name}: {e}", exc_info=True)
-        return False
+        error_msg = str(e)
+        # بررسی خطای کوتای
+        if "429" in error_msg or "quota" in error_msg.lower() or "exceeded" in error_msg.lower():
+            logger.warning(f"API quota exceeded for {model_name}. This is normal for free tier users.")
+            logger.warning("Application will continue with limited functionality. Consider upgrading your API plan.")
+            # برای خطای کوتای، True برمی‌گردانیم تا اپلیکیشن ادامه دهد
+            return True
+        else:
+            logger.error(f"Validation failed for {model_name}: {e}", exc_info=True)
+            return False
+
+def try_fallback_models(api_key: str, primary_model: str) -> str:
+    """سعی می‌کند مدل‌های جایگزین را پیدا کند اگر مدل اصلی کار نکند."""
+    fallback_models = [
+        "models/gemini-flash-latest",
+        "models/gemini-2.0-flash",
+        "models/gemini-2.0-flash-001",
+        "models/gemini-pro-latest"
+    ]
+    
+    # حذف مدل اصلی از لیست fallback
+    if primary_model in fallback_models:
+        fallback_models.remove(primary_model)
+    
+    for fallback_model in fallback_models:
+        try:
+            logger.info(f"Trying fallback model: {fallback_model}")
+            if validate_model_access(api_key, fallback_model):
+                logger.info(f"Successfully found working fallback model: {fallback_model}")
+                return fallback_model
+        except Exception as e:
+            logger.warning(f"Fallback model {fallback_model} also failed: {e}")
+            continue
+    
+    logger.error("All fallback models failed. Returning primary model anyway.")
+    return primary_model
 
 def embed_with_gemini(text: str) -> list[float]:
     """
@@ -203,7 +237,9 @@ try:
 
     # --- ادامه راه‌اندازی مدل‌های هوش مصنوعی ---
     if not validate_model_access(GEMINI_API_KEY, SELECTED_MODEL_NAME):
-         raise RuntimeError(f"Failed to access the selected model '{SELECTED_MODEL_NAME}'. Check your API key or model name.")
+        logger.warning(f"Primary model '{SELECTED_MODEL_NAME}' not accessible. Trying fallback models...")
+        SELECTED_MODEL_NAME = try_fallback_models(GEMINI_API_KEY, SELECTED_MODEL_NAME)
+        logger.info(f"Using model: {SELECTED_MODEL_NAME}")
 
     llm_model = genai.GenerativeModel(
         SELECTED_MODEL_NAME,
@@ -380,8 +416,14 @@ def _sync_reload_all_data():
             # فقط اگر مدل یا کلید API تغییر کرده بود، آن را دوباره مقداردهی می‌کنیم
             if new_model_name != SELECTED_MODEL_NAME or new_api_key != GEMINI_API_KEY or llm_model is None:
                 if not validate_model_access(new_api_key, new_model_name):
-                    logger.error(f"Cannot switch to model {new_model_name} with new API key, access validation failed. Keeping old configuration.")
-                    return # از تغییر مدل جلوگیری می‌کنیم
+                    logger.warning(f"Cannot switch to model {new_model_name} with new API key, trying fallback models...")
+                    working_model = try_fallback_models(new_api_key, new_model_name)
+                    if working_model != new_model_name:
+                        logger.info(f"Using fallback model: {working_model}")
+                        new_model_name = working_model
+                    else:
+                        logger.error("All models failed. Keeping old configuration.")
+                        return # از تغییر مدل جلوگیری می‌کنیم
 
                 SELECTED_MODEL_NAME = new_model_name
                 GEMINI_API_KEY = new_api_key
@@ -699,8 +741,27 @@ async def llm_generate_with_retry(model, contents, tries=3, backoff=1.5):
             return await asyncio.to_thread(lambda: model.generate_content(contents))
         except Exception as e:
             last_err = e
+            error_msg = str(e)
+            
+            # بررسی خطای کوتای
+            if "429" in error_msg or "quota" in error_msg.lower() or "exceeded" in error_msg.lower():
+                logger.warning(f"API quota exceeded (attempt {i+1}/{tries}). Waiting longer before retry...")
+                # برای خطای کوتای، زمان انتظار بیشتری در نظر می‌گیریم
+                await asyncio.sleep(60 * (i + 1))  # 60, 120, 180 ثانیه
+                continue
+            
             logger.warning(f"LLM call failed (attempt {i+1}/{tries}): {e}")
             await asyncio.sleep(backoff * (i + 1))
+    
+    # اگر همه تلاش‌ها ناموفق بود، پیام مناسب برگردانیم
+    if "429" in str(last_err) or "quota" in str(last_err).lower():
+        logger.error("API quota exhausted. Returning fallback message.")
+        # ایجاد یک پاسخ fallback برای خطای کوتای
+        fallback_response = type('obj', (object,), {
+            'text': "متاسفانه در حال حاضر به دلیل محدودیت استفاده روزانه، سرویس هوش مصنوعی در دسترس نیست. لطفاً فردا دوباره تلاش کنید یا پلن API خود را ارتقا دهید."
+        })
+        return fallback_response
+    
     raise last_err
 
 def sanitize_history(raw_history: list) -> list:
