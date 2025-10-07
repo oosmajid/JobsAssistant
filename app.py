@@ -41,11 +41,11 @@ logger = logging.getLogger(__name__)
 # ==============================================================================
 # 3) AI & Database Configuration
 # ==============================================================================
-DB_USER = "oosmajid"
+DB_USER = "hezarjobs"
 DB_PASS = ""
 DB_HOST = "localhost"
 DB_PORT = "5432"
-DB_NAME = "hezardjab_local"
+DB_NAME = "jobs_assistant"
 DB_CONNECTION_STRING = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 AVAILABLE_MODELS = [

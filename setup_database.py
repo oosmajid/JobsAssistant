@@ -34,11 +34,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # تنظیمات دیتابیس
-DB_USER = "oosmajid"
+DB_USER = "hezarjobs"
 DB_PASS = ""
 DB_HOST = "localhost"
 DB_PORT = "5432"
-DB_NAME = "hezardjab_local"
+DB_NAME = "jobs_assistant"
 
 # تنظیمات پیش‌فرض
 DEFAULT_GEMINI_API_KEY = "AIzaSyCxYoe12F2AZjL5PhE-vDSSQtpnFP7rIeg"
