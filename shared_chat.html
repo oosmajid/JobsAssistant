@@ -659,12 +659,12 @@
             const messageElement = document.createElement('div');
             messageElement.classList.add('message', sender === 'user' ? 'user-message' : 'bot-message');
             
-            // متن از قبل فرمت‌بندی شده است (innerHTML از index.html)
+            // تبدیل خط‌های جدید به <br> برای همه پیام‌ها
             if (sender === 'bot') {
                 // برای متن‌های bot که از قبل فرمت‌بندی شده‌اند
-                messageElement.innerHTML = text;
+                messageElement.innerHTML = text.replace(/\n/g, '<br>');
             } else {
-                // برای پیام‌های کاربر فقط escape کردن
+                // برای پیام‌های کاربر escape کردن و تبدیل خط‌های جدید
                 const sanitizedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
                 messageElement.innerHTML = sanitizedText.replace(/\n/g, '<br>');
             }
