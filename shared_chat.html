@@ -201,6 +201,35 @@
             color: #ffffff;
         }
         
+        .copy-icon { 
+            color: #adb5bd; 
+            cursor: pointer; 
+            font-size: 0.9em; 
+            padding: 5px; 
+            opacity: 0; 
+            transition: opacity 0.2s, color 0.2s; 
+        }
+        
+        .message-row:hover .copy-icon { 
+            opacity: 1; 
+        }
+        
+        .copy-icon:hover { 
+            color: #343a40; 
+        }
+        
+        .copy-icon .fa-check { 
+            color: #28a745; 
+        }
+        
+        body.dark-mode .copy-icon {
+            color: #adb5bd;
+        }
+        
+        body.dark-mode .copy-icon:hover {
+            color: #ffffff;
+        }
+        
         .loading-container {
             display: flex;
             justify-content: center;
@@ -652,6 +681,23 @@
         const pathParts = window.location.pathname.split('/');
         const shareId = pathParts[pathParts.length - 1];
         
+        function createCopyIcon(textToCopy) {
+            const iconContainer = document.createElement('div');
+            iconContainer.classList.add('copy-icon');
+            iconContainer.innerHTML = '<i class="far fa-copy"></i>';
+            iconContainer.addEventListener('click', () => { 
+                navigator.clipboard.writeText(textToCopy).then(() => { 
+                    iconContainer.innerHTML = '<i class="fas fa-check"></i>'; 
+                    setTimeout(() => { 
+                        iconContainer.innerHTML = '<i class="far fa-copy"></i>'; 
+                    }, 1500); 
+                }).catch(err => { 
+                    console.error('Failed to copy text: ', err); 
+                }); 
+            });
+            return iconContainer;
+        }
+        
         function addMessage(text, sender) {
             const messageRow = document.createElement('div');
             messageRow.classList.add('message-row', sender === 'user' ? 'user-row' : 'bot-row');
@@ -679,12 +725,18 @@
                 messageElement.innerHTML = processedText;
             }
             
+            // ایجاد دکمه کپی
+            const copyIcon = createCopyIcon(text);
+            
             if (sender === 'user') {
                 messageRow.appendChild(messageElement);
+                messageRow.appendChild(copyIcon);
             } else { // Bot
                 const avatar = document.createElement('div');
                 avatar.classList.add('avatar');
                 avatar.innerHTML = '<i class="fa-solid fa-robot"></i>';
+                // تغییر ترتیب برای جابجایی آیکون کپی
+                messageRow.appendChild(copyIcon);
                 messageRow.appendChild(messageElement);
                 messageRow.appendChild(avatar);
             }
