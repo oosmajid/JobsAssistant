@@ -691,12 +691,12 @@ async def extract_evidence_with_llm(history_contents: list):
 
 # ... (تابع score_with_ebp بدون تغییر باقی می‌ماند) ...
 def score_with_ebp(ev_json: dict):
-    # This function uses hardcoded values from prompts.py, let's keep it that way for simplicity
-    # or move these settings to another config/db table later.
-    from prompts import DEFAULT_SCORES, RIASEC_NAMES, WORK_VALUES_NAMES, WORK_STYLES_NAMES, JOB_ZONE_MAPPING
+    # این تابع اکنون از صفر شروع می‌کند تا هر کاربر امتیازات منحصر به فرد داشته باشد
+    from prompts import RIASEC_NAMES, WORK_VALUES_NAMES, WORK_STYLES_NAMES, JOB_ZONE_MAPPING
     
     def clip(x, lo, hi): return max(lo, min(hi, x))
-    rs_sum, wv_sum, ws_sum = {k: DEFAULT_SCORES["riasec_base"] for k in RIASEC_NAMES}, {k: DEFAULT_SCORES["work_values_base"] for k in WORK_VALUES_NAMES}, {k: DEFAULT_SCORES["work_styles_base"] for k in WORK_STYLES_NAMES}
+    # شروع از صفر به جای مقادیر پیش‌فرض
+    rs_sum, wv_sum, ws_sum = {k: 0.0 for k in RIASEC_NAMES}, {k: 0.0 for k in WORK_VALUES_NAMES}, {k: 0.0 for k in WORK_STYLES_NAMES}
     
     education_hint = (ev_json or {}).get("education_hint", "Unknown") or "Unknown"
     comp_hints = set((ev_json or {}).get("complexity_hints", []) or [])
@@ -708,9 +708,10 @@ def score_with_ebp(ev_json: dict):
         elif cat == "WorkValue" and name in wv_sum: wv_sum[name] += delta
         elif cat == "WorkStyle" and name in ws_sum: ws_sum[name] += delta
         
-    rs_scores = {k: round(clip(v, 1.0, 7.0), 2) for k, v in rs_sum.items()}
-    wv_scores = {k: round(clip(v, 1.0, 6.0), 2) for k, v in wv_sum.items()}
-    ws_scores = {k: round(clip(v, 1.0, 5.0), 2) for k, v in ws_sum.items()}
+    # چون از صفر شروع می‌کنیم، محدوده‌ها را از 0 تنظیم می‌کنیم
+    rs_scores = {k: round(clip(v, 0.0, 7.0), 2) for k, v in rs_sum.items()}
+    wv_scores = {k: round(clip(v, 0.0, 6.0), 2) for k, v in wv_sum.items()}
+    ws_scores = {k: round(clip(v, 0.0, 5.0), 2) for k, v in ws_sum.items()}
     
     base_map = JOB_ZONE_MAPPING
     jz = base_map.get(education_hint, 3) + ('complex_projects' in comp_hints) + ('management_desire' in comp_hints) - ('routine_preference' in comp_hints) - ('job_security_emphasis' in comp_hints)
