@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 # ==============================================================================
-# 0) Secrets & Project Info
+# 0) Environment Variables & Configuration
 # ==============================================================================
-# GEMINI_API_KEY از دیتابیس خوانده می‌شود
-GEMINI_API_KEY = "AIzaSyCxYoe12F2AZjL5PhE-vDSSQtpnFP7rIeg"
-PROJECT_REF    = "agurgrbrcroygnfnijbv"
-DB_PASSWORD    = "Z8A1lT49f0CXn2Ox"
+import os
+# بارگذاری متغیرهای محیطی از فایل .env
+from dotenv import load_dotenv
+load_dotenv()
+
+# متغیرهای مهم از محیط
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+PROJECT_REF    = os.getenv("PROJECT_REF")
 
 # ==============================================================================
 # 2) Imports and Basic Setup
@@ -21,7 +25,6 @@ import secrets
 from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-import os
 from sqlalchemy import create_engine, text
 import google.generativeai as genai
 # from sentence_transformers import SentenceTransformer
@@ -44,22 +47,18 @@ logger = logging.getLogger(__name__)
 # ==============================================================================
 # 3) AI & Database Configuration
 # ==============================================================================
-# DB_USER = "oosmajid"
-# DB_PASS = ""
-DB_USER = "hezarjobs"
-DB_PASS = "mbk"
-DB_HOST = "localhost"
-DB_PORT = "5432"
-DB_NAME = "jobs_assistant"
+# تنظیمات دیتابیس از متغیرهای محیطی
+DB_USER = os.getenv("DB_USER")
+DB_PASS = os.getenv("DB_PASS")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME")
 DB_CONNECTION_STRING = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-AVAILABLE_MODELS = [
-    "models/gemini-flash-latest",
-    "models/gemini-pro-latest",
-    "models/gemini-2.0-flash",
-    "models/gemini-2.0-flash-001",
-]
-DEFAULT_MODEL = "models/gemini-flash-latest"
+# مدل‌های موجود از متغیرهای محیطی
+AVAILABLE_MODELS_STR = os.getenv("AVAILABLE_MODELS", "models/gemini-flash-latest,models/gemini-pro-latest,models/gemini-2.0-flash,models/gemini-2.0-flash-001")
+AVAILABLE_MODELS = [model.strip() for model in AVAILABLE_MODELS_STR.split(",")]
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "models/gemini-flash-latest")
 
 # دیکشنری گلوبال برای نگهداری پرامپت‌ها
 PROMPTS = {}
@@ -178,7 +177,7 @@ try:
         logger.info(f"Selected LLM model from settings: {SELECTED_MODEL_NAME}")
         
         # --- خواندن یا ایجاد کلید API ---
-        GEMINI_API_KEY = _sync_get_or_create_setting(conn, "GEMINI_API_KEY", "AIzaSyCxYoe12F2AZjL5PhE-vDSSQtpnFP7rIeg")
+        GEMINI_API_KEY = _sync_get_or_create_setting(conn, "GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
         if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY":
             raise RuntimeError("GEMINI_API_KEY is not set in database settings. Please configure it in the admin panel.")
         logger.info("Gemini API key loaded from database settings.")
@@ -356,8 +355,8 @@ def _sync_reload_all_data():
             ).scalar_one_or_none()
             
             if new_api_key is None:
-                new_api_key = "AIzaSyCxYoe12F2AZjL5PhE-vDSSQtpnFP7rIeg"
-                logger.warning("Setting 'GEMINI_API_KEY' not found in DB. Using default.")
+                new_api_key = os.getenv("GEMINI_API_KEY")
+                logger.warning("Setting 'GEMINI_API_KEY' not found in DB. Using environment variable.")
             
             # فقط اگر مدل یا کلید API تغییر کرده بود، آن را دوباره مقداردهی می‌کنیم
             if new_model_name != SELECTED_MODEL_NAME or new_api_key != GEMINI_API_KEY or llm_model is None:
@@ -996,9 +995,9 @@ if __name__ == "__main__":
         sys.exit(1)
 
     if "YOUR_GEMINI_API_KEY" in str(GEMINI_API_KEY) or "YOUR_PROJECT_REF" in PROJECT_REF:
-        print("\n⚠️ هشدار: اطلاعات محرمانه در بخش 0) فایل app.py تنظیم نشده است.")
+        print("\n⚠️ هشدار: اطلاعات محرمانه در فایل .env تنظیم نشده است.")
     else:
-        PORT = 5007
+        PORT = int(os.getenv("PORT", "5007"))
         print("✅ سرور Flask آماده به کار است.")
         print(f"صفحه چت در آدرس: http://127.0.0.1:{PORT}")
         print(f"پنل مدیریت پرامپت‌ها در آدرس: http://127.0.0.1:{PORT}/admin")

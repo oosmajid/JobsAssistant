@@ -28,6 +28,10 @@ import logging
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
+
+# بارگذاری متغیرهای محیطی
+load_dotenv()
 
 # ------------------------------------------------------------------------------
 # Logging
@@ -40,15 +44,15 @@ logging.basicConfig(
 log = logging.getLogger("setup")
 
 # ------------------------------------------------------------------------------
-# Config (env-first; fallbacks for quick start)
+# Config (از فایل .env)
 # ------------------------------------------------------------------------------
-DB_USER = os.getenv("DB_USER", "hezarjobs")
-DB_PASS = os.getenv("DB_PASS", "mbk")
+DB_USER = os.getenv("DB_USER")
+DB_PASS = os.getenv("DB_PASS")
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
-DB_NAME = os.getenv("DB_NAME", "jobs_assistant")
+DB_NAME = os.getenv("DB_NAME")
 
-DEFAULT_GEMINI_API_KEY = os.getenv("DEFAULT_GEMINI_API_KEY", "AIzaSyCxYoe12F2AZjL5PhE-vDSSQtpnFP7rIeg")
+DEFAULT_GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "models/gemini-flash-latest")
 
 CSV_PATH = os.getenv("JOBS_CSV_PATH", "jobs_rows.csv")
@@ -259,9 +263,9 @@ def insert_initial_data():
     initial_settings = [
         ("GEMINI_API_KEY", DEFAULT_GEMINI_API_KEY),
         ("SELECTED_LLM_MODEL", DEFAULT_MODEL),
-        ("ADMIN_PASSWORD", "admin123"),
-        ("MAX_CONVERSATION_LENGTH", "100"),
-        ("SESSION_TIMEOUT", "3600"),
+        ("ADMIN_PASSWORD", os.getenv("ADMIN_PASSWORD")),
+        ("MAX_CONVERSATION_LENGTH", os.getenv("MAX_CONVERSATION_LENGTH", "100")),
+        ("SESSION_TIMEOUT", os.getenv("SESSION_TIMEOUT", "3600")),
     ]
 
     initial_prompts = [
