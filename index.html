@@ -1059,9 +1059,21 @@
             }
         });
         userInput.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                sendMessage();
+            if (event.key === 'Enter') {
+                if (isMobileDevice()) {
+                    // در موبایل: Enter = خط جدید، Shift+Enter = ارسال
+                    if (event.shiftKey) {
+                        event.preventDefault();
+                        sendMessage();
+                    }
+                    // اگر Shift+Enter نیست، اجازه می‌دهیم خط جدید ایجاد شود (رفتار پیش‌فرض)
+                } else {
+                    // در دسکتاپ: Enter = ارسال، Shift+Enter = خط جدید
+                    if (!event.shiftKey) {
+                        event.preventDefault();
+                        sendMessage();
+                    }
+                }
             }
         });
         
