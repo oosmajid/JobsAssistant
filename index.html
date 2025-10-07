@@ -694,6 +694,7 @@
         let userId = 'web_user_' + Date.now() + Math.random().toString(36).substr(2, 9);
         let recognition = null;
         let isRecording = false;
+        let userCareerProfile = null;
         
         // متغیرهای مربوط به تایپ در پس‌زمینه
         let currentTypingInterval = null;
@@ -906,7 +907,8 @@
                     },
                     body: JSON.stringify({
                         user_id: userId,
-                        conversation: getCurrentConversation()
+                        conversation: getCurrentConversation(),
+                        career_profile: userCareerProfile
                     })
                 });
                 
@@ -991,10 +993,16 @@
             showTypingIndicator();
             try {
                 const response = await fetch('http://45.8.22.249:50519/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId, message: messageText, }), });
+                // const response = await fetch('http://127.0.0.1:5001/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId, message: messageText, }), });
                 if (!response.ok) throw new Error('Network response was not ok.');
                 const data = await response.json();
                 removeTypingIndicator();
                 addTypedMessage(data.reply, 'bot');
+                
+                // ذخیره career_profile اگر موجود باشد
+                if (data.career_profile) {
+                    userCareerProfile = data.career_profile;
+                }
             } catch (error) {
                 console.error('Error:', error);
                 removeTypingIndicator();

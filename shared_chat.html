@@ -291,6 +291,174 @@
             opacity: 0.8;
         }
         
+        .profile-button {
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            margin-top: 10px;
+            transition: background-color 0.2s;
+        }
+        
+        .profile-button:hover {
+            background-color: #45a049;
+        }
+        
+        body.dark-mode .profile-button {
+            background-color: #4caf50;
+        }
+        
+        body.dark-mode .profile-button:hover {
+            background-color: #45a049;
+        }
+        
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+        }
+        
+        .modal-content {
+            background-color: #fff;
+            margin: 5% auto;
+            padding: 0;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        body.dark-mode .modal-content {
+            background-color: #2d2d2d;
+            color: #ffffff;
+        }
+        
+        .modal-header {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px 12px 0 0;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        body.dark-mode .modal-header {
+            background-color: #404040;
+            border-bottom-color: #555555;
+        }
+        
+        .modal-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #333;
+            margin: 0;
+        }
+        
+        body.dark-mode .modal-title {
+            color: #ffffff;
+        }
+        
+        .close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 1;
+        }
+        
+        .close:hover,
+        .close:focus {
+            color: #000;
+        }
+        
+        body.dark-mode .close:hover,
+        body.dark-mode .close:focus {
+            color: #fff;
+        }
+        
+        .modal-body {
+            padding: 20px;
+        }
+        
+        .profile-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        .profile-table th,
+        .profile-table td {
+            border: 1px solid #e9ecef;
+            padding: 12px;
+            text-align: right;
+        }
+        
+        .profile-table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        body.dark-mode .profile-table th {
+            background-color: #404040;
+            color: #ffffff;
+        }
+        
+        body.dark-mode .profile-table th,
+        body.dark-mode .profile-table td {
+            border-color: #555555;
+        }
+        
+        .profile-table tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        
+        body.dark-mode .profile-table tr:nth-child(even) {
+            background-color: #404040;
+        }
+        
+        .score-cell {
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .section-title {
+            font-size: 1.1em;
+            font-weight: bold;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: #007bff;
+        }
+        
+        body.dark-mode .section-title {
+            color: #90caf9;
+        }
+        
+        .no-profile {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+            padding: 40px 20px;
+        }
+        
+        body.dark-mode .no-profile {
+            color: #ccc;
+        }
+        
         /* Mobile Responsive Design */
         @media (max-width: 768px) {
             body {
@@ -461,6 +629,19 @@
         </div>
     </div>
     
+    <!-- Modal for Career Profile -->
+    <div id="profileModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">پروفایل شغلی</h2>
+                <span class="close" id="closeModal">&times;</span>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Content will be loaded here -->
+            </div>
+        </div>
+    </div>
+    
     <script>
         const chatMessages = document.getElementById('chat-messages');
         const loadingContainer = document.getElementById('loading-container');
@@ -517,6 +698,17 @@
         function showChatInfo(data) {
             const chatInfo = document.createElement('div');
             chatInfo.classList.add('chat-info');
+            
+            let profileButton = '';
+            if (data.career_profile) {
+                profileButton = `
+                    <button class="profile-button" onclick="showCareerProfile()">
+                        <i class="fas fa-user-tie"></i>
+                        نمایش پروفایل شغلی این چت
+                    </button>
+                `;
+            }
+            
             chatInfo.innerHTML = `
                 <div>
                     <i class="fas fa-share-alt"></i>
@@ -526,8 +718,12 @@
                     <i class="fas fa-eye"></i>
                     ${data.view_count} بار مشاهده شده
                 </div>
+                ${profileButton}
             `;
             chatMessages.appendChild(chatInfo);
+            
+            // ذخیره career_profile برای استفاده در مودال
+            window.sharedCareerProfile = data.career_profile;
         }
         
         async function loadSharedChat() {
@@ -585,8 +781,168 @@
             }
         }
         
+        // Modal functions
+        function showCareerProfile() {
+            const modal = document.getElementById('profileModal');
+            const modalBody = document.getElementById('modalBody');
+            
+            if (!window.sharedCareerProfile) {
+                modalBody.innerHTML = '<div class="no-profile">پروفایل شغلی برای این چت موجود نیست.</div>';
+            } else {
+                modalBody.innerHTML = generateProfileTable(window.sharedCareerProfile);
+            }
+            
+            modal.style.display = 'block';
+        }
+        
+        function closeModal() {
+            const modal = document.getElementById('profileModal');
+            modal.style.display = 'none';
+        }
+        
+        function generateProfileTable(profile) {
+            let html = '';
+            
+            // Job Zone
+            if (profile.job_zone) {
+                html += `
+                    <div class="section-title">منطقه شغلی (Job Zone)</div>
+                    <table class="profile-table">
+                        <tr>
+                            <th>منطقه شغلی</th>
+                            <td class="score-cell">${profile.job_zone}</td>
+                        </tr>
+                    </table>
+                `;
+            }
+            
+            // Interests (RIASEC)
+            if (profile.interests) {
+                html += `
+                    <div class="section-title">علایق شغلی (RIASEC)</div>
+                    <table class="profile-table">
+                        <tr>
+                            <th>نوع علاقه</th>
+                            <th>امتیاز</th>
+                        </tr>
+                `;
+                
+                const riasecNames = {
+                    'Realistic': 'واقع‌گرا (Realistic)',
+                    'Investigative': 'جستجوگر (Investigative)',
+                    'Artistic': 'هنری (Artistic)',
+                    'Social': 'اجتماعی (Social)',
+                    'Enterprising': 'متهور (Enterprising)',
+                    'Conventional': 'قراردادی (Conventional)'
+                };
+                
+                Object.entries(profile.interests).forEach(([key, value]) => {
+                    const persianName = riasecNames[key] || key;
+                    html += `
+                        <tr>
+                            <td>${persianName}</td>
+                            <td class="score-cell">${value}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</table>';
+            }
+            
+            // Work Values
+            if (profile.work_values) {
+                html += `
+                    <div class="section-title">ارزش‌های کاری (Work Values)</div>
+                    <table class="profile-table">
+                        <tr>
+                            <th>ارزش کاری</th>
+                            <th>امتیاز</th>
+                        </tr>
+                `;
+                
+                const workValuesNames = {
+                    'Achievement': 'دستاورد (Achievement)',
+                    'Independence': 'استقلال (Independence)',
+                    'Recognition': 'تشخیص (Recognition)',
+                    'Relationships': 'روابط (Relationships)',
+                    'Support': 'حمایت (Support)',
+                    'Working_Conditions': 'شرایط کاری (Working Conditions)'
+                };
+                
+                Object.entries(profile.work_values).forEach(([key, value]) => {
+                    const persianName = workValuesNames[key] || key;
+                    html += `
+                        <tr>
+                            <td>${persianName}</td>
+                            <td class="score-cell">${value}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</table>';
+            }
+            
+            // Work Styles
+            if (profile.work_styles) {
+                html += `
+                    <div class="section-title">سبک‌های کاری (Work Styles)</div>
+                    <table class="profile-table">
+                        <tr>
+                            <th>سبک کاری</th>
+                            <th>امتیاز</th>
+                        </tr>
+                `;
+                
+                const workStylesNames = {
+                    'Achievement_Effort': 'دستاورد/تلاش (Achievement/Effort)',
+                    'Adaptability_Flexibility': 'انطباق/انعطاف (Adaptability/Flexibility)',
+                    'Analytical_Thinking': 'تفکر تحلیلی (Analytical Thinking)',
+                    'Attention_to_Detail': 'توجه به جزئیات (Attention to Detail)',
+                    'Cooperation': 'همکاری (Cooperation)',
+                    'Concern_for_Others': 'نگرانی برای دیگران (Concern for Others)',
+                    'Dependability': 'قابل اعتماد بودن (Dependability)',
+                    'Independence': 'استقلال (Independence)',
+                    'Initiative': 'ابتکار (Initiative)',
+                    'Innovation': 'نوآوری (Innovation)',
+                    'Integrity': 'صداقت (Integrity)',
+                    'Leadership': 'رهبری (Leadership)',
+                    'Persistence': 'پایداری (Persistence)',
+                    'Self_Control': 'خودکنترلی (Self Control)',
+                    'Social_Orientation': 'گرایش اجتماعی (Social Orientation)',
+                    'Stress_Tolerance': 'تحمل استرس (Stress Tolerance)'
+                };
+                
+                Object.entries(profile.work_styles).forEach(([key, value]) => {
+                    const persianName = workStylesNames[key] || key;
+                    html += `
+                        <tr>
+                            <td>${persianName}</td>
+                            <td class="score-cell">${value}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</table>';
+            }
+            
+            return html;
+        }
+        
         // Event listeners
         themeToggle.addEventListener('click', toggleTheme);
+        
+        // Modal event listeners
+        const modal = document.getElementById('profileModal');
+        const closeBtn = document.getElementById('closeModal');
+        
+        closeBtn.addEventListener('click', closeModal);
+        
+        // Close modal when clicking outside of it
+        window.addEventListener('click', function(event) {
+            if (event.target === modal) {
+                closeModal();
+            }
+        });
         
         // اسکرول chat-messages وقتی موس در خارج از آن است
         document.addEventListener('wheel', (event) => {

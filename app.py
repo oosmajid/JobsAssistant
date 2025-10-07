@@ -139,11 +139,18 @@ try:
                 share_id VARCHAR(50) UNIQUE NOT NULL,
                 original_user_id VARCHAR(100) NOT NULL,
                 conversation_data JSONB NOT NULL,
+                career_profile JSONB,
                 created_at TIMESTAMP DEFAULT NOW(),
                 expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '30 days'),
                 view_count INTEGER DEFAULT 0,
                 last_viewed_at TIMESTAMP
             )
+        """))
+        
+        # --- اضافه کردن فیلد career_profile اگر وجود نداشته باشد ---
+        conn.execute(text("""
+            ALTER TABLE public.shared_chats 
+            ADD COLUMN IF NOT EXISTS career_profile JSONB
         """))
         conn.commit()
         logger.info("Shared chats table created/verified successfully.")
@@ -560,7 +567,7 @@ def _sync_update_prompts_in_db(prompts_dict: dict):
         logger.error(f"Failed to update prompts in DB: {e}", exc_info=True)
         raise # خطا را دوباره ایجاد می‌کنیم تا در route handler مدیریت شود
 
-def _sync_create_shared_chat(user_id: str, conversation_data: list) -> str:
+def _sync_create_shared_chat(user_id: str, conversation_data: list, career_profile: dict = None) -> str:
     """ایجاد لینک اشتراک‌گذاری برای چت"""
     try:
         # تولید share_id منحصر به فرد
@@ -570,15 +577,16 @@ def _sync_create_shared_chat(user_id: str, conversation_data: list) -> str:
         
         with engine.connect() as conn:
             stmt = text("""
-                INSERT INTO public.shared_chats (share_id, original_user_id, conversation_data)
-                VALUES (:share_id, :user_id, :conversation_data)
+                INSERT INTO public.shared_chats (share_id, original_user_id, conversation_data, career_profile)
+                VALUES (:share_id, :user_id, :conversation_data, :career_profile)
                 RETURNING share_id
             """)
             
             result = conn.execute(stmt, {
                 "share_id": share_id,
                 "user_id": user_id,
-                "conversation_data": json.dumps(conversation_data, ensure_ascii=False)
+                "conversation_data": json.dumps(conversation_data, ensure_ascii=False),
+                "career_profile": json.dumps(career_profile, ensure_ascii=False) if career_profile else None
             })
             conn.commit()
             
@@ -600,7 +608,7 @@ def _sync_get_shared_chat(share_id: str) -> dict:
             
             # دریافت داده‌های چت
             stmt = text("""
-                SELECT conversation_data, created_at, view_count
+                SELECT conversation_data, career_profile, created_at, view_count
                 FROM public.shared_chats 
                 WHERE share_id = :share_id AND expires_at > NOW()
             """)
@@ -610,6 +618,7 @@ def _sync_get_shared_chat(share_id: str) -> dict:
             
             if result:
                 conversation_data = result["conversation_data"]
+                career_profile = result["career_profile"]
                 logger.info(f"Raw conversation_data type: {type(conversation_data)}")
                 
                 # اگر conversation_data یک string است، آن را parse کنیم
@@ -620,10 +629,19 @@ def _sync_get_shared_chat(share_id: str) -> dict:
                         logger.error(f"Failed to parse conversation_data JSON: {e}")
                         return None
                 
+                # اگر career_profile یک string است، آن را parse کنیم
+                if isinstance(career_profile, str):
+                    try:
+                        career_profile = json.loads(career_profile)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse career_profile JSON: {e}")
+                        career_profile = None
+                
                 logger.info(f"Processed conversation_data type: {type(conversation_data)}, length: {len(conversation_data) if isinstance(conversation_data, list) else 'N/A'}")
                 
                 return {
                     "conversation": conversation_data,
+                    "career_profile": career_profile,
                     "created_at": result["created_at"],
                     "view_count": result["view_count"]
                 }
@@ -795,11 +813,12 @@ def share_chat():
         data = request.json
         user_id = data.get('user_id')
         conversation = data.get('conversation', [])
+        career_profile = data.get('career_profile')
         
         if not user_id or not conversation:
             return jsonify({'error': 'User ID and conversation are required'}), 400
         
-        share_id = _sync_create_shared_chat(user_id, conversation)
+        share_id = _sync_create_shared_chat(user_id, conversation, career_profile)
         return jsonify({'share_id': share_id})
         
     except Exception as e:
@@ -944,13 +963,13 @@ def chat():
         return jsonify({'reply': 'متاسفانه سرویس هوش مصنوعی در حال حاضر در دسترس نیست.'}), 503
 
     try:
-        reply = asyncio.run(handle_web_message(web_user_id, user_message, request))
-        return jsonify({'reply': reply})
+        reply, career_profile = asyncio.run(handle_web_message(web_user_id, user_message, request))
+        return jsonify({'reply': reply, 'career_profile': career_profile})
     except Exception as e:
         logger.error(f"Error in /chat endpoint for user {web_user_id}: {e}", exc_info=True)
         return jsonify({'reply': '⚠️ یک خطای داخلی در سرور رخ داد.'}), 500
 
-async def handle_web_message(web_user_id: str, user_message: str, request_obj=None) -> str:
+async def handle_web_message(web_user_id: str, user_message: str, request_obj=None) -> tuple[str, dict]:
     # استخراج اطلاعات کاربر از درخواست
     user_info = None
     if request_obj:
@@ -958,7 +977,7 @@ async def handle_web_message(web_user_id: str, user_message: str, request_obj=No
     
     db_user_id = await get_or_create_user(web_user_id, "WebUser", user_info)
     if not db_user_id:
-        return "خطا در دسترسی به اطلاعات کاربری شما."
+        return "خطا در دسترسی به اطلاعات کاربری شما.", None
 
     convo_data = await get_conversation(db_user_id)
     history_gemini_fmt = sanitize_history(convo_data.get("conversation_history", []))
@@ -979,9 +998,13 @@ async def handle_web_message(web_user_id: str, user_message: str, request_obj=No
     await save_conversation(db_user_id, updated_db_history)
 
     if is_signal:
-        return await run_final_analysis_and_matching(db_user_id, updated_db_history)
+        final_report = await run_final_analysis_and_matching(db_user_id, updated_db_history)
+        # دریافت career_profile از دیتابیس
+        updated_convo_data = await get_conversation(db_user_id)
+        career_profile = updated_convo_data.get("career_profile")
+        return final_report, career_profile
     
-    return bot_response_text
+    return bot_response_text, None
 
 
 if __name__ == "__main__":
