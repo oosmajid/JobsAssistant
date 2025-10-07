@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 # تنظیمات دیتابیس
 DB_USER = "hezarjobs"
-DB_PASS = ""
+DB_PASS = "mbk"
 DB_HOST = "localhost"
 DB_PORT = "5432"
 DB_NAME = "jobs_assistant"

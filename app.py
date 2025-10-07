@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # 3) AI & Database Configuration
 # ==============================================================================
 DB_USER = "hezarjobs"
-DB_PASS = ""
+DB_PASS = "mbk"
 DB_HOST = "localhost"
 DB_PORT = "5432"
 DB_NAME = "jobs_assistant"
