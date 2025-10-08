@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>چت اشتراکی - مشاور شغلی هزارجاب</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -636,6 +637,41 @@
                 display: none;
             }
         }
+
+        /* ... کدهای CSS قبلی ... */
+
+        /* >>> این بخش را به انتهای استایل‌ها اضافه کن <<< */
+        /* --- استایل برای جدول‌های Markdown --- */
+        .bot-message table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            background-color: #ffffff;
+            font-size: 0.9em;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #e9ecef;
+        }
+        .bot-message th, .bot-message td {
+            border: 1px solid #e9ecef;
+            padding: 10px 12px;
+            text-align: right;
+        }
+        .bot-message th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        /* --- استایل جدول در حالت تاریک --- */
+        body.dark-mode .bot-message table {
+            background-color: #2d2d2d;
+            border-color: #404040;
+        }
+        body.dark-mode .bot-message th, body.dark-mode .bot-message td {
+            border-color: #404040;
+        }
+        body.dark-mode .bot-message th {
+            background-color: #404040;
+        }
     </style>
 </head>
 <body>
@@ -676,7 +712,10 @@
         const loadingContainer = document.getElementById('loading-container');
         const themeToggle = document.getElementById('theme-toggle');
         const themeIcon = document.getElementById('theme-icon');
-        
+        marked.setOptions({
+            breaks: true,
+            gfm: true
+        });
         // دریافت share_id از URL
         const pathParts = window.location.pathname.split('/');
         const shareId = pathParts[pathParts.length - 1];
@@ -709,12 +748,7 @@
             let processedText = text;
             
             if (sender === 'bot') {
-                // برای متن‌های bot که از قبل فرمت‌بندی شده‌اند
-                // تبدیل **text** به <strong>text</strong>
-                processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                // تبدیل خط‌های جدید به <br>
-                processedText = processedText.replace(/\n/g, '<br>');
-                messageElement.innerHTML = processedText;
+                messageElement.innerHTML = marked.parse(text);
             } else {
                 // برای پیام‌های کاربر escape کردن و تبدیل خط‌های جدید
                 const sanitizedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
