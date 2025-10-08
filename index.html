@@ -703,6 +703,7 @@
         let recognition = null;
         let isRecording = false;
         let userCareerProfile = null;
+        let lastFinalText = ''; // ذخیره آخرین متن نهایی برای تشخیص متن جدید
         
         // متغیرهای مربوط به تایپ در پس‌زمینه
         let currentTypingInterval = null;
@@ -729,12 +730,33 @@
                         interim_transcript += event.results[i][0].transcript;
                     }
                 }
-                userInput.value = final_transcript + interim_transcript;
+                
+                // اگر متن نهایی جدیدی داریم، آن را به آخرین متن نهایی اضافه می‌کنیم
+                if (final_transcript) {
+                    lastFinalText += final_transcript;
+                }
+                
+                // نمایش متن نهایی + متن interim فعلی
+                userInput.value = lastFinalText + interim_transcript;
                 userInput.dispatchEvent(new Event('input'));
             };
             
-            recognition.onerror = (event) => { console.error('Speech recognition error:', event.error); };
-            recognition.onend = () => { isRecording = false; micButton.classList.remove('recording'); };
+            recognition.onerror = (event) => { 
+                console.error('Speech recognition error:', event.error); 
+                // فقط در صورت خطای جدی ضبط را متوقف کن
+                if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                    isRecording = false; 
+                    micButton.classList.remove('recording'); 
+                }
+            };
+            
+            recognition.onend = () => { 
+                // ضبط خودکار متوقف نمی‌شود - فقط در صورت کلیک کاربر یا ارسال پیام
+                if (isRecording) {
+                    // اگر هنوز در حال ضبط هستیم، دوباره شروع کن
+                    recognition.start();
+                }
+            };
         } else { micButton.style.display = 'none'; }
 
         function createCopyIcon(textToCopy) {
@@ -878,10 +900,23 @@
         function startNewChat() {
             chatMessages.innerHTML = '';
             userId = 'web_user_' + Date.now() + Math.random().toString(36).substr(2, 9);
+            lastFinalText = ''; // ریست کردن متغیر متن نهایی
             showTypingIndicator();
             setTimeout(() => { removeTypingIndicator(); addTypedMessage('سلام! من مشاور شغلی «هزارجاب» هستم. برای اینکه بتونم بهتر کمکت کنم، لطفاً خودت رو کامل معرفی کن: نام، سن، جنسیت، وضعیت شغلی فعلی و رشتهٔ تحصیلی.', 'bot'); }, 1000);
         }
-        function toggleSpeechRecognition() { if (!recognition || sendButton.disabled) return; if (isRecording) { recognition.stop(); } else { recognition.start(); } }
+        function toggleSpeechRecognition() { 
+            if (!recognition || sendButton.disabled) return; 
+            if (isRecording) { 
+                // توقف ضبط صدا
+                recognition.stop();
+                isRecording = false;
+                micButton.classList.remove('recording');
+            } else { 
+                // شروع ضبط صدا - ریست کردن متغیر متن نهایی
+                lastFinalText = userInput.value; // حفظ متن موجود در تکست‌باکس
+                recognition.start();
+            } 
+        }
         
         function toggleTheme() {
             const body = document.body;
@@ -995,8 +1030,17 @@
         async function sendMessage() {
             const messageText = userInput.value.trim();
             if (messageText === '' || sendButton.disabled) return;
+            
+            // توقف ضبط صدا هنگام ارسال پیام
+            if (isRecording && recognition) {
+                recognition.stop();
+                isRecording = false;
+                micButton.classList.remove('recording');
+            }
+            
             addMessage(messageText, 'user');
             userInput.value = '';
+            lastFinalText = ''; // ریست کردن متغیر متن نهایی
             userInput.dispatchEvent(new Event('input'));
             sendButton.disabled = true; userInput.disabled = true; micButton.disabled = true;
             showTypingIndicator();
