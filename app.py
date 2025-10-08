@@ -992,7 +992,6 @@ async def run_final_analysis_and_matching(user_id: int, history: list) -> str:
     if not all([llm_model, engine]):
         return PROMPTS.get('SYSTEM_ERROR_MESSAGE', 'System error.')
     try:
-        initial_message = PROMPTS.get('ANALYSIS_START_MESSAGE', 'Starting analysis...')
         history_gemini_fmt = sanitize_history(history)
         evidence_json = await extract_evidence_with_llm(history_gemini_fmt)
         career_profile, jz, jz_just = score_with_ebp(evidence_json)
@@ -1031,7 +1030,7 @@ async def run_final_analysis_and_matching(user_id: int, history: list) -> str:
         )
         await mark_report_generated(user_id)
         
-        return f"{initial_message}\n\n{final_report}"
+        return final_report
 
     except Exception as e:
         logger.error(f"Critical error in final analysis for user {user_id}: {e}", exc_info=True)
@@ -1474,30 +1473,100 @@ def chat():
         return jsonify({'reply': 'متاسفانه سرویس هوش مصنوعی در حال حاضر در دسترس نیست.'}), 503
 
     try:
-        reply, career_profile = asyncio.run(handle_web_message(web_user_id, user_message, request))
-        return jsonify({'reply': reply, 'career_profile': career_profile})
+        response_data = asyncio.run(handle_web_message(web_user_id, user_message, request))
+        return jsonify(response_data)
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Error in /chat endpoint for user {web_user_id}: {e}", exc_info=True)
         
-        # بررسی خطای quota
         if "429" in error_msg or "quota" in error_msg.lower() or "exceeded" in error_msg.lower():
             return jsonify({
+                'reply_type': 'standard',
                 'reply': '⚠️ متاسفانه به دلیل محدودیت استفاده روزانه، سرویس هوش مصنوعی در حال حاضر در دسترس نیست. لطفاً فردا دوباره تلاش کنید یا پلن API خود را ارتقا دهید.',
                 'error_type': 'quota_exceeded'
             }), 429
         else:
-            return jsonify({'reply': '⚠️ یک خطای داخلی در سرور رخ داد.'}), 500
+            return jsonify({
+                'reply_type': 'standard',
+                'reply': '⚠️ یک خطای داخلی در سرور رخ داد.'
+            }), 500
 
-async def handle_web_message(web_user_id: str, user_message: str, request_obj=None) -> tuple[str, dict]:
-    # استخراج اطلاعات کاربر از درخواست
+@app.route('/start-analysis', methods=['POST'])
+def start_analysis():
+    data = request.json
+    web_user_id = data.get('user_id')
+
+    if not web_user_id:
+        return jsonify({'error': 'User ID is required'}), 400
+
+    try:
+        # Run the analysis and get the final report and profile
+        report, profile = asyncio.run(trigger_analysis_for_user(web_user_id))
+        return jsonify({'final_report': report, 'career_profile': profile})
+    except Exception as e:
+        logger.error(f"Error in /start-analysis for user {web_user_id}: {e}", exc_info=True)
+        return jsonify({'final_report': '⚠️ یک خطای داخلی در سرور هنگام تحلیل رخ داد.'}), 500
+
+async def trigger_analysis_for_user(web_user_id: str) -> tuple[str, dict | None]:
+    """
+    >>> CHANGE: This function now cleans up the conversation history in the database
+    after the final report is generated.
+    """
+    db_user_id = await get_or_create_user(web_user_id)
+    if not db_user_id:
+        return "خطا در یافتن اطلاعات کاربری شما.", None
+    
+    convo_data = await get_conversation(db_user_id)
+    history = convo_data.get("conversation_history", [])
+    
+    # Run the analysis; this populates the final_report_text column in the DB
+    final_report = await run_final_analysis_and_matching(db_user_id, history)
+    
+    # --- START: NEW LOGIC to clean up conversation history ---
+    # Create a new, clean history to replace the one with the JSON signal
+    clean_history = []
+    found_and_replaced = False
+    for message in history:
+        is_signal = False
+        # Check if the current message is the JSON signal from the model
+        if message.get("role") == "model":
+            try:
+                parts = message.get("parts", [])
+                if parts and isinstance(parts[0], str) and json.loads(parts[0]).get("analysis_complete") is True:
+                    is_signal = True
+            except (json.JSONDecodeError, IndexError, TypeError):
+                # Not the signal, just a regular message
+                pass
+        
+        if is_signal:
+            # If it's the signal, replace it with the two messages the user actually saw
+            initial_message = PROMPTS.get('ANALYSIS_START_MESSAGE', 'تحلیل شما تایید شد. در حال آماده‌سازی گزارش...')
+            clean_history.append({"role": "model", "parts": [initial_message]})
+            clean_history.append({"role": "model", "parts": [final_report]})
+            found_and_replaced = True
+        else:
+            # Otherwise, just add the original message to the clean history
+            clean_history.append(message)
+            
+    # If the replacement happened, save the clean history back to the database
+    if found_and_replaced:
+        await save_conversation(db_user_id, clean_history)
+    # --- END: NEW LOGIC ---
+
+    # Fetch the updated profile from the DB after analysis
+    updated_convo_data = await get_conversation(db_user_id)
+    career_profile = updated_convo_data.get("career_profile")
+    
+    return final_report, career_profile
+
+async def handle_web_message(web_user_id: str, user_message: str, request_obj=None) -> dict:
     user_info = None
     if request_obj:
         user_info = extract_user_info_from_request(request_obj)
     
     db_user_id = await get_or_create_user(web_user_id, "WebUser", user_info)
     if not db_user_id:
-        return "خطا در دسترسی به اطلاعات کاربری شما.", None
+        return {'reply_type': 'standard', 'reply': "خطا در دسترسی به اطلاعات کاربری شما."}
 
     convo_data = await get_conversation(db_user_id)
     history_gemini_fmt = sanitize_history(convo_data.get("conversation_history", []))
@@ -1505,8 +1574,6 @@ async def handle_web_message(web_user_id: str, user_message: str, request_obj=No
     contents = history_gemini_fmt + [{"role": "user", "parts": [user_message]}]
     response = await llm_generate_with_retry(llm_model, contents)
     bot_response_text = (response.text or "متوجه نشدم؛ می‌تونی کمی روشن‌تر توضیح بدی؟").strip()
-
-    updated_db_history = contents + [{"role": "model", "parts": [bot_response_text]}]
 
     is_signal = False
     try:
@@ -1516,24 +1583,25 @@ async def handle_web_message(web_user_id: str, user_message: str, request_obj=No
         pass
 
     if is_signal:
-        # تولید گزارش نهایی
-        final_report = await run_final_analysis_and_matching(db_user_id, updated_db_history)
+        # 1. Create the final history entry including the bot's JSON signal
+        updated_db_history = contents + [{"role": "model", "parts": [bot_response_text]}]
         
-        # جایگزینی JSON با گزارش نهایی در تاریخچه
-        updated_db_history[-1]["parts"] = [final_report]
-        
-        # ذخیره تاریخچه با گزارش نهایی
+        # 2. Save this history to the database so the next request can access it
         await save_conversation(db_user_id, updated_db_history)
         
-        # دریافت career_profile از دیتابیس
-        updated_convo_data = await get_conversation(db_user_id)
-        career_profile = updated_convo_data.get("career_profile")
-        return final_report, career_profile
+        # 3. Return an immediate response telling the frontend to start the analysis process
+        return {
+            'reply_type': 'analysis_started',
+            'reply': PROMPTS.get('ANALYSIS_START_MESSAGE', 'تحلیل شما تایید شد. در حال آماده‌سازی گزارش...'),
+        }
     else:
-        # ذخیره تاریخچه عادی
+        # Standard message handling
+        updated_db_history = contents + [{"role": "model", "parts": [bot_response_text]}]
         await save_conversation(db_user_id, updated_db_history)
-        return bot_response_text, None
-
+        return {
+            'reply_type': 'standard',
+            'reply': bot_response_text,
+        }
 
 if __name__ == "__main__":
     # ابتدا بررسی می‌کنیم که آیا راه‌اندازی اولیه موفقیت‌آمیز بوده یا خیر

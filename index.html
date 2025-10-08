@@ -657,7 +657,6 @@
     </div>
     <div id="speech-status" class="speech-status"></div>
     
-    <!-- مودال اشتراک‌گذاری -->
     <div id="share-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -684,7 +683,7 @@
         const API_BASE_URL = window.location.origin; // استفاده از همان دامنه فعلی
         const CHAT_API_ENDPOINT = `${API_BASE_URL}/chat`;
         const SHARE_API_ENDPOINT = `${API_BASE_URL}/share-chat`;
-        
+        const ANALYSIS_API_ENDPOINT = `${API_BASE_URL}/start-analysis`;
         // DOM Elements
         const chatMessages = document.getElementById('chat-messages');
         const userInput = document.getElementById('user-input');
@@ -992,6 +991,7 @@
                 }, 2000);
             }
         }
+
         async function sendMessage() {
             const messageText = userInput.value.trim();
             if (messageText === '' || sendButton.disabled) return;
@@ -1000,53 +1000,89 @@
             userInput.dispatchEvent(new Event('input'));
             sendButton.disabled = true; userInput.disabled = true; micButton.disabled = true;
             showTypingIndicator();
+
             try {
-                const response = await fetch(CHAT_API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId, message: messageText, }), });
+                // --- مرحله ۱: ارسال پیام و دریافت پاسخ فوری ---
+                const response = await fetch(CHAT_API_ENDPOINT, { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ user_id: userId, message: messageText, }), 
+                });
                 
                 if (!response.ok) {
-                    // بررسی خطای quota
-                    if (response.status === 429) {
-                        throw new Error('QUOTA_EXCEEDED');
-                    }
+                    if (response.status === 429) { throw new Error('QUOTA_EXCEEDED'); }
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 
                 const data = await response.json();
                 removeTypingIndicator();
                 
-                // بررسی خطای quota در response
-                if (data.error_type === 'quota_exceeded' || (data.reply && data.reply.includes('محدودیت استفاده روزانه'))) {
+                if (data.reply_type === 'analysis_started') {
+                    // ۱. نمایش پیام "لطفا صبر کنید"
                     addTypedMessage(data.reply, 'bot');
-                } else {
-                    addTypedMessage(data.reply, 'bot');
-                }
+                    
+                    // --- START: FIX ---
+                    // ۲. اجرای تابع تحلیل با یک تاخیر بسیار کوتاه
+                    // این کار به مرورگر فرصت می‌دهد تا پیام بالا را نمایش دهد
+                    // قبل از اینکه نشانگر لودینگ بعدی ظاهر شود.
+                    setTimeout(startAnalysis, 100); 
+                    // --- END: FIX ---
                 
-                // ذخیره career_profile اگر موجود باشد
-                if (data.career_profile) {
-                    userCareerProfile = data.career_profile;
+                } else { // پاسخ استاندارد
+                    addTypedMessage(data.reply, 'bot');
+                    // فعال‌سازی مجدد ورودی برای پیام بعدی
+                    sendButton.disabled = false; userInput.disabled = false; micButton.disabled = false;
+                    if (window.innerWidth > 768 && !/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                        userInput.focus();
+                    }
                 }
+
             } catch (error) {
-                console.error('Error:', error);
+                console.error('Error in sendMessage:', error);
                 removeTypingIndicator();
-                
-                // تشخیص نوع خطا و نمایش پیام مناسب
                 if (error.message === 'QUOTA_EXCEEDED') {
-                    addMessage('⚠️ محدودیت استفاده روزانه API تمام شده است. لطفاً فردا دوباره تلاش کنید یا پلن API خود را ارتقا دهید.', 'bot');
-                } else if (error.message.includes('Network response was not ok')) {
-                    addMessage('🌐 خطا در ارتباط با سرور. لطفاً اتصال اینترنت خود را بررسی کنید.', 'bot');
-                } else if (error.message.includes('Failed to fetch')) {
-                    addMessage('🔌 سرور در دسترس نیست. لطفاً چند لحظه صبر کنید و دوباره تلاش کنید.', 'bot');
+                    addMessage('⚠️ محدودیت استفاده روزانه API تمام شده است.', 'bot');
                 } else {
-                    addMessage('❌ متاسفانه خطایی در ارتباط با سرور رخ داد. لطفا دوباره تلاش کنید.', 'bot');
+                    addMessage('❌ خطایی در ارتباط با سرور رخ داد.', 'bot');
                 }
-            } finally {
+                // همیشه در صورت خطا، ورودی را فعال کن
                 sendButton.disabled = false; userInput.disabled = false; micButton.disabled = false;
-                // فقط در دسکتاپ focus کنیم تا کیبورد موبایل باز نشود
-                if (window.innerWidth > 768 && !/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-                    userInput.focus();
-                }
             }
         }
+
+        // >>> این تابع جدید را اضافه کن <<<
+        async function startAnalysis() {
+            showTypingIndicator(); // نمایش لودینگ تا زمان اتمام تحلیل
+            
+            try {
+                const response = await fetch(ANALYSIS_API_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId }),
+                });
+
+                if (!response.ok) { throw new Error('Analysis request failed'); }
+
+                const analysisData = await response.json();
+                
+                removeTypingIndicator();
+                addTypedMessage(analysisData.final_report, 'bot');
+                
+                if (analysisData.career_profile) {
+                    userCareerProfile = analysisData.career_profile;
+                }
+
+            } catch (error) {
+                console.error('Error in startAnalysis:', error);
+                removeTypingIndicator();
+                addMessage('❌ متاسفانه در هنگام تولید گزارش تحلیلی خطایی رخ داد.', 'bot');
+            } finally {
+                // فعال‌سازی مجدد ورودی پس از دریافت گزارش نهایی یا خطا
+                sendButton.disabled = false; userInput.disabled = false; micButton.disabled = false;
+                if (window.innerWidth > 768) userInput.focus();
+            }
+        }
+
         sendButton.addEventListener('click', sendMessage);
         newChatButton.addEventListener('click', startNewChat);
         micButton.addEventListener('click', toggleSpeechRecognition);
