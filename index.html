@@ -1061,6 +1061,11 @@
                 closeShareModalHandler();
             }
         });
+        // Function to detect mobile devices
+        function isMobileDevice() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+        }
+
         userInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
                 if (isMobileDevice()) {
@@ -1076,6 +1081,7 @@
                         event.preventDefault();
                         sendMessage();
                     }
+                    // اگر Shift+Enter است، اجازه می‌دهیم خط جدید ایجاد شود
                 }
             }
         });
