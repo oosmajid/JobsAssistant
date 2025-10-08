@@ -569,29 +569,34 @@ def _sync_reload_all_data():
                 new_api_key = os.getenv("GEMINI_API_KEY")
                 logger.warning("Setting 'GEMINI_API_KEY' not found in DB. Using environment variable.")
             
-            # فقط اگر مدل یا کلید API تغییر کرده بود، آن را دوباره مقداردهی می‌کنیم
+            # اگر نام مدل یا کلید API تغییر کرده است، ابتدا آن را اعتبارسنجی می‌کنیم
             if new_model_name != SELECTED_MODEL_NAME or new_api_key != GEMINI_API_KEY or llm_model is None:
                 if not validate_model_access(new_api_key, new_model_name):
-                    logger.warning(f"Cannot switch to model {new_model_name} with new API key, trying fallback models...")
+                    logger.warning(f"Cannot access the new model '{new_model_name}'. Trying fallbacks...")
                     working_model = try_fallback_models(new_api_key, new_model_name)
+                    
                     if working_model != new_model_name:
-                        logger.info(f"Using fallback model: {working_model}")
+                        logger.info(f"Using fallback model instead: {working_model}")
                         new_model_name = working_model
                     else:
-                        logger.error("All models failed. Keeping old configuration.")
-                        return # از تغییر مدل جلوگیری می‌کنیم
-
+                        logger.error("All models failed. Reverting to the previously active configuration to keep the service running.")
+                        # بازگشت به تنظیمات قبلی تا برنامه متوقف نشود
+                        new_model_name = SELECTED_MODEL_NAME
+                        new_api_key = GEMINI_API_KEY
+                
+                # به‌روزرسانی متغیرهای گلوبال با مقادیر تایید شده نهایی
                 SELECTED_MODEL_NAME = new_model_name
                 GEMINI_API_KEY = new_api_key
-                llm_model = genai.GenerativeModel(
-                    SELECTED_MODEL_NAME,
-                    system_instruction=PROMPTS.get('COUNSELOR_MANIFESTO', 'You are a helpful assistant.')
-                )
-                logger.info(f"Successfully re-configured and switched to LLM model: {SELECTED_MODEL_NAME}")
-            else:
-                logger.info("Model name and API key have not changed. Skipping LLM re-configuration.")
 
-        logger.info(f"All data reloaded. {len(PROMPTS)} prompts active.")
+            # ✅ **راه‌حل اصلی:** مدل زبان را *همیشه* پس از بارگذاری داده‌ها، 
+            # با جدیدترین دستورالعمل سیستمی از حافظه، دوباره می‌سازیم.
+            llm_model = genai.GenerativeModel(
+                SELECTED_MODEL_NAME,
+                system_instruction=PROMPTS.get('COUNSELOR_MANIFESTO', 'You are a helpful assistant.')
+            )
+            logger.info(f"LLM model '{SELECTED_MODEL_NAME}' has been successfully re-configured with the latest system prompt.")
+
+        logger.info(f"All data reloaded. {len(PROMPTS)} prompts are now active in memory.")
     except Exception as e:
         logger.error(f"Failed to reload data from DB: {e}", exc_info=True)
         raise
