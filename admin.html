@@ -84,6 +84,16 @@
                 padding: 10px;
             }
             
+            /* Make refresh button stack below select on mobile */
+            .prompt-group div[style*="display: flex"] {
+                flex-direction: column !important;
+            }
+            
+            .prompt-group div[style*="display: flex"] button {
+                width: 100% !important;
+                margin-top: 10px;
+            }
+            
             .prompt-group input,
             .prompt-group select {
                 font-size: 0.9em;
@@ -402,10 +412,15 @@
         </div>
         <div class="prompt-group">
             <label for="llm-model-select">مدل هوش مصنوعی (LLM)</label>
-            <select id="llm-model-select" name="llm_model" style="width: 100%; padding: 10px; font-size: 1em; border-radius: 6px;">
+            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                <select id="llm-model-select" name="llm_model" style="flex: 1; padding: 10px; font-size: 1em; border-radius: 6px;">
                 </select>
+                <button type="button" id="refresh-models-btn" style="padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; white-space: nowrap;" title="به‌روزرسانی لیست مدل‌ها از API">
+                    🔄
+                </button>
+            </div>
             <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
-                مدل انتخابی پس از ذخیره تغییرات، برای تمام مکالمات جدید استفاده خواهد شد.
+                مدل انتخابی پس از ذخیره تغییرات، برای تمام مکالمات جدید استفاده خواهد شد. دکمه 🔄 لیست مدل‌ها را از API Gemini به‌روزرسانی می‌کند.
             </p>
         </div>
         <form id="prompt-form">
@@ -508,6 +523,7 @@
             const textareas = form.querySelectorAll('textarea');
             const modelSelect = document.getElementById('llm-model-select');
             const apiKeyInput = document.getElementById('gemini-api-key');
+            const refreshModelsBtn = document.getElementById('refresh-models-btn');
             const toastContainer = document.getElementById('toast-container');
     
             // 1. Fetch and populate all admin data on page load
@@ -551,27 +567,69 @@
                 }
             }
     
-            // 2. Handle form submission
-            async function saveData() {
+            // 2. Function to refresh models from API
+            async function refreshModels() {
+                try {
+                    refreshModelsBtn.disabled = true;
+                    refreshModelsBtn.textContent = '⏳';
+                    
+                    const response = await fetch('/admin/refresh-models');
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        // Clear and repopulate model select
+                        modelSelect.innerHTML = '';
+                        data.available_models.forEach(modelName => {
+                            const option = document.createElement('option');
+                            option.value = modelName;
+                            option.textContent = modelName;
+                            modelSelect.appendChild(option);
+                        });
+                        
+                        // Keep the previously selected model if it still exists
+                        const currentSelection = modelSelect.value;
+                        if (data.available_models.includes(currentSelection)) {
+                            modelSelect.value = currentSelection;
+                        }
+                        
+                        showToast(data.message, 'success');
+                    } else {
+                        showToast(data.error || 'خطا در به‌روزرسانی مدل‌ها', 'error');
+                    }
+                } catch (error) {
+                    showToast(`خطا در ارتباط با سرور: ${error.message}`, 'error');
+                } finally {
+                    refreshModelsBtn.disabled = false;
+                    refreshModelsBtn.textContent = '🔄';
+                }
+            }
     
+            // 3. Handle form submission
+            async function saveData() {
+                // نمایش پیام در حال ذخیره
+                showToast('در حال ذخیره تغییرات...', 'info');
+                
+                // ذخیره مقدار فعلی مدل برای استفاده در صورت خطا
+                const currentModelValue = modelSelect.value;
+
                 // Gather prompts data
                 const promptsData = {};
                 textareas.forEach(textarea => {
                     promptsData[textarea.name] = textarea.value;
                 });
-    
+
                 // Gather settings data
                 const settingsData = {
                     "SELECTED_LLM_MODEL": modelSelect.value,
                     "GEMINI_API_KEY": apiKeyInput.value
                 };
-    
+
                 // Combine into a single payload
                 const payload = {
                     prompts: promptsData,
                     settings: settingsData
                 };
-    
+
                 try {
                     // آدرس جدید برای ارسال داده‌ها
                     const response = await fetch('/admin/data', {
@@ -586,7 +644,32 @@
                     }
     
                     const result = await response.json();
-                    showToast(result.message, 'success');
+                    
+                    // بررسی اگر validation مدل ناموفق بوده باشد
+                    if (result.validation_failed) {
+                        if (result.fallback_model) {
+                            // نمایش هشدار و بروزرسانی dropdown به مدل جایگزین
+                            showToast(result.message, 'warning');
+                            
+                            // بروزرسانی dropdown به مدل جایگزین
+                            modelSelect.value = result.fallback_model;
+                            
+                            // نمایش پیام اضافی برای اطلاع کاربر
+                            setTimeout(() => {
+                                showToast(`مدل جایگزین "${result.fallback_model}" انتخاب شد.`, 'info');
+                            }, 2000);
+                        } else {
+                            // اگر هیچ مدل جایگزینی یافت نشد
+                            showToast(result.error, 'error');
+                            
+                            // بازگشت dropdown به مقدار قبلی
+                            modelSelect.value = currentModelValue;
+                            showToast(`مدل به مقدار قبلی "${currentModelValue}" بازگردانده شد.`, 'info');
+                        }
+                    } else {
+                        // ذخیره‌سازی موفق
+                        showToast(result.message, 'success');
+                    }
 
                 } catch (error) {
                     showToast(`ذخیره‌سازی ناموفق بود: ${error.message}`, 'error');
@@ -596,6 +679,11 @@
             form.addEventListener('submit', async (event) => {
                 event.preventDefault();
                 await saveData();
+            });
+            
+            // Add event listener for refresh models button
+            refreshModelsBtn.addEventListener('click', async () => {
+                await refreshModels();
             });
 
             // 3. Handle Ctrl+S (Windows/Linux) and Cmd+S (Mac) shortcuts

@@ -11,6 +11,7 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 PROJECT_REF    = os.getenv("PROJECT_REF")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")  # پسورد پیش‌فرض ادمین
+IS_METIS = True
 
 # ==============================================================================
 # 2) Imports and Basic Setup
@@ -28,6 +29,7 @@ from flask import Flask, request, jsonify, send_from_directory, session, redirec
 from flask_cors import CORS
 from sqlalchemy import create_engine, text
 import google.generativeai as genai
+from google.api_core.client_options import ClientOptions
 # from sentence_transformers import SentenceTransformer
 
 # فایل prompts.py فقط برای اولین راه‌اندازی (seeding) استفاده می‌شود
@@ -48,7 +50,18 @@ logger = logging.getLogger(__name__)
 # ==============================================================================
 # 3) AI & Database Configuration
 # ==============================================================================
-# تنظیمات دیتابیس از متغیرهای محیطی
+
+def configure_genai(api_key: str):
+    if IS_METIS:
+        genai.configure(api_key=api_key, transport='rest',
+                        client_options=ClientOptions(api_endpoint="https://api.metisai.ir"))
+    else:
+        genai.configure(api_key=api_key)
+    
+
+# ==============================================================================
+# 4) Database Configuration
+# ==============================================================================
 DB_USER = os.getenv("DB_USER")
 DB_PASS = os.getenv("DB_PASS")
 DB_HOST = os.getenv("DB_HOST", "localhost")
@@ -223,7 +236,7 @@ def validate_model_access(api_key: str, model_name: str) -> bool:
     """بررسی می‌کند که آیا به مدل مشخص شده دسترسی وجود دارد یا خیر."""
     try:
         logger.info(f"Validating access to model: {model_name}...")
-        genai.configure(api_key=api_key)
+        configure_genai(api_key)
         model = genai.GenerativeModel(model_name)
         _ = model.generate_content("ping", request_options={'timeout': 10}) # 10 ثانیه مهلت
         logger.info(f"Successfully validated access to {model_name}.")
@@ -240,14 +253,113 @@ def validate_model_access(api_key: str, model_name: str) -> bool:
             logger.error(f"Validation failed for {model_name}: {e}", exc_info=True)
             return False
 
+def is_text_generation_model(model_name: str) -> bool:
+    """بررسی اینکه آیا مدل برای تولید متن مناسب است یا نه"""
+    model_lower = model_name.lower()
+    
+    # حذف مدل‌های image-generation، vision و TTS
+    excluded_keywords = [
+        'image', 'vision', 'imagen', 'dall-e', 'stable-diffusion',  # image generation
+        'tts', 'text-to-speech', 'speech', 'audio', 'voice', 'sound'  # TTS models
+    ]
+    if any(keyword in model_lower for keyword in excluded_keywords):
+        return False
+    
+    # فقط مدل‌های Gemini برای تولید متن
+    if 'gemini' not in model_lower:
+        return False
+    
+    return True
+
+def fetch_available_models_from_api(api_key: str) -> list[str]:
+    """دریافت لیست مدل‌های در دسترس از API Gemini"""
+    try:
+        logger.info("Fetching available models from Gemini API...")
+        configure_genai(api_key)
+        
+        # دریافت لیست تمام مدل‌ها
+        models = list(genai.list_models())
+        
+        # فیلتر کردن مدل‌های مناسب (فقط generateContent و بدون image-generation)
+        suitable_models = []
+        logger.info(f"Total models found from API: {len(models)}")
+        
+        for model in models:
+            # بررسی اینکه مدل قابلیت generate_content دارد
+            if 'generateContent' in model.supported_generation_methods:
+                model_name = model.name
+                
+                # استفاده از تابع کمکی برای فیلتر کردن
+                if is_text_generation_model(model_name):
+                    suitable_models.append(model_name)
+                    logger.debug(f"Added model: {model_name}")
+                else:
+                    logger.debug(f"Filtered out model: {model_name}")
+        
+        logger.info(f"Text generation models after filtering: {len(suitable_models)}")
+        
+        # مرتب‌سازی بر اساس اولویت (مدل‌های جدیدتر و latest اولویت بالاتری دارند)
+        priority_order = {
+            'gemini-2.0-flash': 1,
+            'gemini-2.0-flash-001': 2,
+            'gemini-exp-1206': 3,  # مدل آزمایشی جدید
+            'gemini-flash-latest': 4,
+            'gemini-pro-latest': 5,
+            'gemini-1.5-flash-latest': 6,  # مدل latest جدید
+            'gemini-1.5-pro-latest': 7,    # مدل latest جدید
+            'gemini-1.5-pro-002': 8,
+            'gemini-1.5-flash-8b': 9,
+            'gemini-1.5-pro': 10,
+            'gemini-1.5-flash': 11,
+            'gemini-1.0-pro': 12
+        }
+        
+        def get_priority(model_name):
+            model_lower = model_name.lower()
+            
+            # کلید اصلی مرتب‌سازی: آیا مدل 'latest' است یا نه؟
+            # به مدل‌های latest گروه 0 و به بقیه گروه 1 می‌دهیم.
+            is_latest_group = 0 if 'latest' in model_lower else 1
+            
+            # کلید دوم مرتب‌سازی: استفاده از دیکشنری اولویت‌بندی
+            specific_priority = 999  # اولویت پیش‌فرض برای مدل‌های ناشناس
+            for key, p_val in priority_order.items():
+                if key in model_lower:
+                    specific_priority = p_val
+                    break # پس از پیدا کردن اولین تطابق، حلقه متوقف می‌شود
+            
+            # خروجی یک تاپل است. پایتون ابتدا بر اساس عضو اول (گروه) مرتب می‌کند
+            # و سپس در صورت تساوی، بر اساس عضو دوم (اولویت) مرتب می‌کند.
+            return (is_latest_group, specific_priority)
+        
+        suitable_models.sort(key=get_priority)
+        
+        # فقط 10 مدل اول را برگردانیم
+        top_models = suitable_models[:100]
+        
+        logger.info(f"Successfully fetched {len(top_models)} models: {top_models}")
+        return top_models
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch models from API: {e}")
+        # در صورت خطا، مدل‌های پیش‌فرض را برگردانیم
+        return [
+            "models/gemini-2.0-flash",
+            "models/gemini-2.0-flash-001", 
+            "models/gemini-flash-latest",
+            "models/gemini-pro-latest",
+            "models/gemini-1.5-flash-latest",
+            "models/gemini-1.5-pro-latest",
+            "models/gemini-1.5-pro-002",
+            "models/gemini-1.5-flash-8b",
+            "models/gemini-exp-1206",
+            "models/gemini-1.5-pro"
+        ]
+
 def try_fallback_models(api_key: str, primary_model: str) -> str:
     """سعی می‌کند مدل‌های جایگزین را پیدا کند اگر مدل اصلی کار نکند."""
-    fallback_models = [
-        "models/gemini-flash-latest",
-        "models/gemini-2.0-flash",
-        "models/gemini-2.0-flash-001",
-        "models/gemini-pro-latest"
-    ]
+    # استفاده از مدل‌های پویا به جای لیست ثابت
+    fallback_models = fetch_available_models_from_api(api_key)
     
     # حذف مدل اصلی از لیست fallback
     if primary_model in fallback_models:
@@ -271,7 +383,7 @@ def embed_with_gemini(text: str) -> list[float]:
     برمی‌گرداند: لیست float (بردار امبدینگ) از سرویس Gemini
     مدل: text-embedding-004
     """
-    genai.configure(api_key=GEMINI_API_KEY)
+    configure_genai(GEMINI_API_KEY)
     resp = genai.embed_content(
         model="models/text-embedding-004",  # یا "text-embedding-004" در برخی ریلیزها
         content=text
@@ -397,6 +509,7 @@ try:
         SELECTED_MODEL_NAME = try_fallback_models(GEMINI_API_KEY, SELECTED_MODEL_NAME)
         logger.info(f"Using model: {SELECTED_MODEL_NAME}")
 
+    configure_genai(GEMINI_API_KEY)
     llm_model = genai.GenerativeModel(
         SELECTED_MODEL_NAME,
         system_instruction=PROMPTS.get('COUNSELOR_MANIFESTO', 'You are a helpful assistant.')
@@ -590,6 +703,7 @@ def _sync_reload_all_data():
 
             # ✅ **راه‌حل اصلی:** مدل زبان را *همیشه* پس از بارگذاری داده‌ها، 
             # با جدیدترین دستورالعمل سیستمی از حافظه، دوباره می‌سازیم.
+            configure_genai(GEMINI_API_KEY)
             llm_model = genai.GenerativeModel(
                 SELECTED_MODEL_NAME,
                 system_instruction=PROMPTS.get('COUNSELOR_MANIFESTO', 'You are a helpful assistant.')
@@ -1422,10 +1536,20 @@ def admin_data():
             "SELECTED_LLM_MODEL": SELECTED_MODEL_NAME,
             "GEMINI_API_KEY": GEMINI_API_KEY
         }
+        
+        # دریافت مدل‌های پویا از API
+        try:
+            dynamic_models = fetch_available_models_from_api(GEMINI_API_KEY)
+            logger.info(f"Dynamic models fetched for admin panel: {dynamic_models}")
+        except Exception as e:
+            logger.error(f"Failed to fetch dynamic models, using fallback: {e}")
+            # در صورت خطا، مدل‌های پیش‌فرض را استفاده کنیم
+            dynamic_models = AVAILABLE_MODELS
+        
         data = {
             "prompts": PROMPTS,
             "settings": settings,
-            "available_models": AVAILABLE_MODELS
+            "available_models": dynamic_models
         }
         return jsonify(data)
     
@@ -1434,6 +1558,41 @@ def admin_data():
             data = request.json
             new_prompts = data.get('prompts', {})
             new_settings = data.get('settings', {})
+            
+            # بررسی اعتبار مدل جدید اگر تغییر کرده باشد
+            new_model_name = new_settings.get('SELECTED_LLM_MODEL')
+            new_api_key = new_settings.get('GEMINI_API_KEY')
+            
+            if new_model_name and new_model_name != SELECTED_MODEL_NAME:
+                logger.info(f"Validating new model: {new_model_name}")
+                
+                # استفاده از API key جدید اگر ارائه شده، در غیر این صورت از کلید فعلی
+                api_key_to_validate = new_api_key if new_api_key else GEMINI_API_KEY
+                
+                if not validate_model_access(api_key_to_validate, new_model_name):
+                    logger.warning(f"Model validation failed for: {new_model_name}")
+                    
+                    # تلاش برای پیدا کردن مدل جایگزین
+                    fallback_model = try_fallback_models(api_key_to_validate, new_model_name)
+                    
+                    if fallback_model != new_model_name:
+                        logger.info(f"Using fallback model: {fallback_model}")
+                        # بروزرسانی تنظیمات با مدل جایگزین
+                        new_settings['SELECTED_LLM_MODEL'] = fallback_model
+                        
+                        return jsonify({
+                            'message': f'مدل انتخابی "{new_model_name}" قابل دسترسی نیست.',
+                            'validation_failed': True,
+                            'fallback_model': fallback_model,
+                            'original_model': new_model_name
+                        }), 200
+                    else:
+                        logger.error(f"All models failed validation for: {new_model_name}")
+                        return jsonify({
+                            'error': f'مدل انتخابی "{new_model_name}" قابل دسترسی نیست و هیچ مدل جایگزینی یافت نشد.',
+                            'validation_failed': True,
+                            'original_model': new_model_name
+                        }), 400
             
             # ذخیره پرامپت‌ها
             _sync_update_prompts_in_db(new_prompts)
@@ -1459,6 +1618,24 @@ def admin_data():
         except Exception as e:
             logger.error(f"Error updating data: {e}", exc_info=True)
             return jsonify({'error': 'خطای داخلی سرور هنگام ذخیره تغییرات.'}), 500
+
+@app.route('/admin/refresh-models', methods=['GET'])
+@require_admin_auth
+def admin_refresh_models():
+    """دریافت لیست جدید مدل‌ها از API"""
+    try:
+        dynamic_models = fetch_available_models_from_api(GEMINI_API_KEY)
+        logger.info(f"Models refreshed for admin panel: {dynamic_models}")
+        return jsonify({
+            'available_models': dynamic_models,
+            'message': f'لیست مدل‌ها به‌روزرسانی شد ({len(dynamic_models)} مدل)'
+        })
+    except Exception as e:
+        logger.error(f"Failed to refresh models: {e}")
+        return jsonify({
+            'available_models': AVAILABLE_MODELS,
+            'error': f'خطا در به‌روزرسانی لیست مدل‌ها: {str(e)}'
+        }), 500
 
 @app.route('/chat', methods=['POST'])
 def chat():
