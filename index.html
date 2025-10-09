@@ -856,20 +856,25 @@
         
         function startTypingAnimation(messageElement, text) {
             let index = 0;
-            const sanitizedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            const originalText = text; // حفظ متن اصلی برای markdown
             typingStartTime = Date.now();
             
             // ذخیره اطلاعات تایپ فعلی
             currentTypingData = {
                 messageElement: messageElement,
-                text: sanitizedText,
+                text: originalText,
                 index: index,
                 startTime: typingStartTime
             };
             
             const typingInterval = setInterval(() => {
-                if (index < sanitizedText.length) {
-                    messageElement.innerHTML += sanitizedText[index];
+                if (index < originalText.length) {
+                    // دریافت متن فعلی تا این نقطه
+                    const currentText = originalText.substring(0, index + 1);
+                    
+                    // اعمال markdown به متن فعلی
+                    messageElement.innerHTML = marked.parse(currentText);
+                    
                     index++;
                     currentTypingData.index = index;
                     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -877,8 +882,8 @@
                     clearInterval(typingInterval);
                     currentTypingInterval = null;
                     currentTypingData = null;
-                    // >>> CHANGE: از کتابخانه marked برای تبدیل Markdown به HTML استفاده کن <<<
-                    messageElement.innerHTML = marked.parse(text);
+                    // اعمال نهایی markdown (برای اطمینان)
+                    messageElement.innerHTML = marked.parse(originalText);
                 }
             }, typingSpeed);
             
@@ -894,22 +899,19 @@
             if (expectedIndex > currentTypingData.index) {
                 // تایپ در پس‌زمینه ادامه پیدا کرده
                 const skipCount = expectedIndex - currentTypingData.index;
-                const remainingText = currentTypingData.text.substring(currentTypingData.index);
-                const textToAdd = remainingText.substring(0, skipCount);
-                
-                currentTypingData.messageElement.innerHTML += textToAdd;
                 currentTypingData.index += skipCount;
                 
                 if (currentTypingData.index >= currentTypingData.text.length) {
                     // تایپ تمام شده
                     clearInterval(currentTypingInterval);
-                    const finalMessageElement = currentTypingData.messageElement;
-                    let finalHtml = finalMessageElement.innerHTML;
-                    finalHtml = finalHtml.replace(/\n/g, '<br>');
-                    finalHtml = finalHtml.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-                    finalMessageElement.innerHTML = finalHtml;
+                    // اعمال نهایی markdown
+                    currentTypingData.messageElement.innerHTML = marked.parse(currentTypingData.text);
                     currentTypingInterval = null;
                     currentTypingData = null;
+                } else {
+                    // دریافت متن فعلی تا این نقطه و اعمال markdown
+                    const currentText = currentTypingData.text.substring(0, currentTypingData.index);
+                    currentTypingData.messageElement.innerHTML = marked.parse(currentText);
                 }
             }
             
