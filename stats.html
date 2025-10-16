@@ -224,6 +224,22 @@
         .back-btn:hover {
             background-color: #5a6268;
         }
+        
+        .profile-btn {
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            transition: background-color 0.2s;
+        }
+        
+        .profile-btn:hover {
+            background-color: #45a049;
+        }
     </style>
 </head>
 <body>
@@ -258,6 +274,7 @@
                         <th>وضعیت اشتراک</th>
                         <th>تعداد بازدید</th>
                         <th>لینک اشتراک</th>
+                        <th>پروفایل شغلی</th>
                     </tr>
                 </thead>
                 <tbody id="chats-table-body">
@@ -367,7 +384,7 @@
             if (data.all_chats.length === 0 && replaceData) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="9" style="text-align: center; padding: 40px; color: #6c757d;">
+                        <td colspan="10" style="text-align: center; padding: 40px; color: #6c757d;">
                             هیچ چتی موجود نیست
                         </td>
                     </tr>
@@ -409,6 +426,14 @@
                         shareLink = '<span style="color: #6c757d;">-</span>';
                     }
                     
+                    // دکمه پروفایل شغلی
+                    let profileButton = '';
+                    if (chat.career_profile) {
+                        profileButton = `<button class="profile-btn" onclick="showCareerProfile(${chat.conversation_id}, ${JSON.stringify(chat.career_profile).replace(/"/g, '&quot;')})">👤 پروفایل</button>`;
+                    } else {
+                        profileButton = '<span style="color: #6c757d;">-</span>';
+                    }
+                    
                     row.innerHTML = `
                         <td style="font-family: monospace; font-size: 0.85em;">${chat.conversation_id}</td>
                         <td style="font-family: monospace; font-size: 0.85em;">${chat.telegram_user_id}</td>
@@ -432,6 +457,7 @@
                             <span class="view-count">${chat.view_count}</span>
                         </td>
                         <td>${shareLink}</td>
+                        <td>${profileButton}</td>
                     `;
                     tableBody.appendChild(row);
                 });
@@ -445,6 +471,156 @@
             }
             
             document.getElementById('chats-content').style.display = 'block';
+        }
+        
+        // تابع نمایش پروفایل شغلی
+        function showCareerProfile(conversationId, careerProfile) {
+            if (!careerProfile) {
+                alert('پروفایل شغلی برای این چت موجود نیست.');
+                return;
+            }
+            
+            // ایجاد مودال
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.5);
+                z-index: 1000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+            
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                background-color: white;
+                padding: 20px;
+                border-radius: 10px;
+                max-width: 80%;
+                max-height: 80%;
+                overflow-y: auto;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            `;
+            
+            let html = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0; color: #007bff;">پروفایل شغلی - چت ${conversationId}</h2>
+                    <button onclick="this.closest('.modal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
+                </div>
+            `;
+            
+            // Job Zone
+            if (careerProfile.job_zone) {
+                html += `
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: #007bff; margin-bottom: 10px;">منطقه شغلی (Job Zone)</h3>
+                        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-right: 4px solid #007bff;">
+                            <strong>منطقه شغلی:</strong> ${careerProfile.job_zone}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Interests (RIASEC)
+            if (careerProfile.interests) {
+                html += `
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: #007bff; margin-bottom: 10px;">علایق شغلی (RIASEC)</h3>
+                        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px;">
+                `;
+                
+                const riasecNames = {
+                    'Realistic': 'واقع‌گرا (Realistic)',
+                    'Investigative': 'جستجوگر (Investigative)',
+                    'Artistic': 'هنری (Artistic)',
+                    'Social': 'اجتماعی (Social)',
+                    'Enterprising': 'متهور (Enterprising)',
+                    'Conventional': 'قراردادی (Conventional)'
+                };
+                
+                Object.entries(careerProfile.interests).forEach(([key, value]) => {
+                    const persianName = riasecNames[key] || key;
+                    html += `<div style="margin-bottom: 8px;"><strong>${persianName}:</strong> ${value}</div>`;
+                });
+                
+                html += `</div></div>`;
+            }
+            
+            // Work Values
+            if (careerProfile.work_values) {
+                html += `
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: #007bff; margin-bottom: 10px;">ارزش‌های کاری (Work Values)</h3>
+                        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px;">
+                `;
+                
+                const workValuesNames = {
+                    'Achievement': 'دستاورد (Achievement)',
+                    'Independence': 'استقلال (Independence)',
+                    'Recognition': 'تشخیص (Recognition)',
+                    'Relationships': 'روابط (Relationships)',
+                    'Support': 'حمایت (Support)',
+                    'Working_Conditions': 'شرایط کاری (Working Conditions)'
+                };
+                
+                Object.entries(careerProfile.work_values).forEach(([key, value]) => {
+                    const persianName = workValuesNames[key] || key;
+                    html += `<div style="margin-bottom: 8px;"><strong>${persianName}:</strong> ${value}</div>`;
+                });
+                
+                html += `</div></div>`;
+            }
+            
+            // Work Styles
+            if (careerProfile.work_styles) {
+                html += `
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: #007bff; margin-bottom: 10px;">سبک‌های کاری (Work Styles)</h3>
+                        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px;">
+                `;
+                
+                const workStylesNames = {
+                    'Achievement_Effort': 'دستاورد/تلاش (Achievement/Effort)',
+                    'Adaptability_Flexibility': 'انطباق/انعطاف (Adaptability/Flexibility)',
+                    'Analytical_Thinking': 'تفکر تحلیلی (Analytical Thinking)',
+                    'Attention_to_Detail': 'توجه به جزئیات (Attention to Detail)',
+                    'Cooperation': 'همکاری (Cooperation)',
+                    'Concern_for_Others': 'نگرانی برای دیگران (Concern for Others)',
+                    'Dependability': 'قابل اعتماد بودن (Dependability)',
+                    'Independence': 'استقلال (Independence)',
+                    'Initiative': 'ابتکار (Initiative)',
+                    'Innovation': 'نوآوری (Innovation)',
+                    'Integrity': 'صداقت (Integrity)',
+                    'Leadership': 'رهبری (Leadership)',
+                    'Persistence': 'پایداری (Persistence)',
+                    'Self_Control': 'خودکنترلی (Self Control)',
+                    'Social_Orientation': 'گرایش اجتماعی (Social Orientation)',
+                    'Stress_Tolerance': 'تحمل استرس (Stress Tolerance)'
+                };
+                
+                Object.entries(careerProfile.work_styles).forEach(([key, value]) => {
+                    const persianName = workStylesNames[key] || key;
+                    html += `<div style="margin-bottom: 8px;"><strong>${persianName}:</strong> ${value}</div>`;
+                });
+                
+                html += `</div></div>`;
+            }
+            
+            modalContent.innerHTML = html;
+            modal.appendChild(modalContent);
+            modal.className = 'modal';
+            document.body.appendChild(modal);
+            
+            // بستن مودال با کلیک خارج از آن
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
         }
         
         // بارگذاری اولیه

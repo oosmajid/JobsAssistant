@@ -111,6 +111,39 @@
             align-items: center;
             gap: 10px;
         }
+
+        .quick-test-button {
+            background-color: #28a745;
+            color: white;
+            border: 1px solid #28a745;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            transition: all 0.2s;
+            display: none;
+        }
+
+        .quick-test-button.show {
+            display: block;
+        }
+
+        .quick-test-button:hover {
+            background-color: #218838;
+            border-color: #1e7e34;
+        }
+
+        body.dark-mode .quick-test-button {
+            background-color: #28a745;
+            color: white;
+            border-color: #28a745;
+        }
+
+        body.dark-mode .quick-test-button:hover {
+            background-color: #218838;
+            border-color: #1e7e34;
+        }
         .new-chat-button {
             background-color: #fff;
             color: #333;
@@ -464,7 +497,7 @@
                 width: 100%;
             }
             
-            .new-chat-button {
+            .new-chat-button, .quick-test-button {
                 order: 1;
                 flex: 1;
                 min-width: 120px;
@@ -473,7 +506,7 @@
                 font-size: 0.9em;
                 text-align: center;
             }
-            
+
             .theme-toggle, .share-button {
                 order: 2;
                 width: 36px;
@@ -563,7 +596,7 @@
                 padding: 0 10px;
             }
             
-            .new-chat-button {
+            .new-chat-button, .quick-test-button {
                 min-width: 100px;
                 padding: 6px 12px;
                 border-radius: 8px;
@@ -668,6 +701,7 @@
         <div class="chat-header-content">
             <div>مشاور شغلی هزارجاب</div>
             <div class="header-right">
+                <button class="quick-test-button" id="quick-test-button" title="تست سریع (ادمین)">⚡ تست سریع</button>
                 <button class="share-button" id="share-button" title="اشتراک‌گذاری چت">
                     <i class="fas fa-share-alt"></i>
                 </button>
@@ -736,12 +770,16 @@
         const closeShareModal = document.getElementById('close-share-modal');
         const shareLinkInput = document.getElementById('share-link-input');
         const copyShareLink = document.getElementById('copy-share-link');
+        const quickTestButton = document.getElementById('quick-test-button');
         
         let userId = 'web_user_' + Date.now() + Math.random().toString(36).substr(2, 9);
         let recognition = null;
         let isRecording = false;
         let userCareerProfile = null;
-        let lastFinalText = ''; // ذخیره آخرین متن نهایی برای تشخیص متن جدید
+        let finalTranscript = ''; // ذخیره تمام متن نهایی تایید شده
+        let isQuickTestMode = false; // برای غیرفعال کردن انیمیشن تایپ در تست سریع
+        let silenceTimeout = null; // برای مدیریت سکوت
+        let restartAttempts = 0; // شمارنده تلاش برای restart
         
         // متغیرهای مربوط به تایپ در پس‌زمینه
         let currentTypingInterval = null;
@@ -759,40 +797,127 @@
             recognition.onstart = () => { isRecording = true; micButton.classList.add('recording'); };
             
             recognition.onresult = (event) => {
-                let interim_transcript = '';
-                let final_transcript = '';
+                // پاک کردن timeout سکوت قبلی
+                if (silenceTimeout) {
+                    clearTimeout(silenceTimeout);
+                }
+                
+                let interimTranscript = '';
+
+                // پردازش نتایج از resultIndex تا آخر
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    const transcript = event.results[i][0].transcript;
+
                     if (event.results[i].isFinal) {
-                        final_transcript += event.results[i][0].transcript;
+                        // اگر نتیجه نهایی است، به finalTranscript اضافه کن
+                        finalTranscript += transcript;
+                        // ریست کردن شمارنده restart
+                        restartAttempts = 0;
                     } else {
-                        interim_transcript += event.results[i][0].transcript;
+                        // اگر نتیجه موقت است، به interimTranscript اضافه کن
+                        interimTranscript += transcript;
                     }
                 }
-                
-                // اگر متن نهایی جدیدی داریم، آن را به آخرین متن نهایی اضافه می‌کنیم
-                if (final_transcript) {
-                    lastFinalText += final_transcript;
-                }
-                
-                // نمایش متن نهایی + متن interim فعلی
-                userInput.value = lastFinalText + interim_transcript;
+
+                // نمایش متن نهایی + متن موقت در input
+                userInput.value = finalTranscript + interimTranscript;
                 userInput.dispatchEvent(new Event('input'));
+                
+                // تنظیم timeout برای تشخیص سکوت (5 ثانیه)
+                silenceTimeout = setTimeout(() => {
+                    if (isRecording && restartAttempts < 3) {
+                        console.log('Silence detected, restarting recognition...');
+                        try {
+                            recognition.stop();
+                            setTimeout(() => {
+                                recognition.start();
+                                restartAttempts++;
+                            }, 200);
+                        } catch (e) {
+                            console.error('Failed to restart recognition after silence:', e);
+                        }
+                    }
+                }, 5000);
             };
             
             recognition.onerror = (event) => { 
                 console.error('Speech recognition error:', event.error); 
+                
+                // پاک کردن timeout سکوت در صورت خطا
+                if (silenceTimeout) {
+                    clearTimeout(silenceTimeout);
+                    silenceTimeout = null;
+                }
+                
                 // فقط در صورت خطای جدی ضبط را متوقف کن
                 if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
                     isRecording = false; 
-                    micButton.classList.remove('recording'); 
+                    micButton.classList.remove('recording');
+                    restartAttempts = 0;
+                } else if (event.error === 'network' || event.error === 'service-unavailable') {
+                    // در صورت خطای شبکه، تلاش برای restart
+                    if (isRecording && restartAttempts < 2) {
+                        console.log('Network error, attempting to restart recognition...');
+                        setTimeout(() => {
+                            try {
+                                recognition.start();
+                                restartAttempts++;
+                            } catch (e) {
+                                console.error('Failed to restart recognition after network error:', e);
+                                isRecording = false;
+                                micButton.classList.remove('recording');
+                                restartAttempts = 0;
+                            }
+                        }, 1000);
+                    } else {
+                        // اگر تلاش‌ها تمام شد، ضبط را متوقف کن
+                        isRecording = false;
+                        micButton.classList.remove('recording');
+                        restartAttempts = 0;
+                    }
+                } else if (event.error === 'no-speech' || event.error === 'audio-capture') {
+                    // برای خطاهای صوتی، تلاش برای restart
+                    if (isRecording && restartAttempts < 1) {
+                        console.log('Audio error, attempting to restart recognition...');
+                        setTimeout(() => {
+                            try {
+                                recognition.start();
+                                restartAttempts++;
+                            } catch (e) {
+                                console.error('Failed to restart recognition after audio error:', e);
+                                isRecording = false;
+                                micButton.classList.remove('recording');
+                                restartAttempts = 0;
+                            }
+                        }, 500);
+                    }
                 }
             };
             
             recognition.onend = () => { 
+                console.log('Speech recognition ended, isRecording:', isRecording);
                 // ضبط خودکار متوقف نمی‌شود - فقط در صورت کلیک کاربر یا ارسال پیام
-                if (isRecording) {
-                    // اگر هنوز در حال ضبط هستیم، دوباره شروع کن
-                    recognition.start();
+                if (isRecording && restartAttempts < 3) {
+                    // تاخیر کوتاه قبل از restart برای جلوگیری از تداخل
+                    setTimeout(() => {
+                        try {
+                            console.log('Restarting speech recognition...');
+                            recognition.start();
+                            restartAttempts++;
+                        } catch (e) {
+                            console.error('Failed to restart recognition in onend:', e);
+                            // اگر restart موفق نبود، ضبط را متوقف کن
+                            isRecording = false;
+                            micButton.classList.remove('recording');
+                            restartAttempts = 0;
+                        }
+                    }, 100);
+                } else if (restartAttempts >= 3) {
+                    // اگر تعداد تلاش‌ها زیاد شد، ضبط را متوقف کن
+                    console.log('Too many restart attempts, stopping recognition');
+                    isRecording = false;
+                    micButton.classList.remove('recording');
+                    restartAttempts = 0;
                 }
             };
         } else { micButton.style.display = 'none'; }
@@ -810,8 +935,18 @@
             messageRow.classList.add('message-row', sender === 'user' ? 'user-row' : 'bot-row');
             const messageElement = document.createElement('div');
             messageElement.classList.add('message', sender === 'user' ? 'user-message' : 'bot-message');
-            const sanitizedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            messageElement.innerHTML = sanitizedText.replace(/\n/g, '<br>');
+            
+            // ذخیره متن خام در data attribute
+            messageElement.setAttribute('data-raw-text', text);
+            
+            if (sender === 'user') {
+                const sanitizedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                messageElement.innerHTML = sanitizedText.replace(/\n/g, '<br>');
+            } else {
+                // برای پیام‌های ربات، markdown را رندر کن
+                messageElement.innerHTML = marked.parse(text);
+            }
+            
             const copyIcon = createCopyIcon(text);
 
             if (sender === 'user') {
@@ -835,6 +970,10 @@
             messageRow.classList.add('message-row', sender === 'user' ? 'user-row' : 'bot-row');
             const messageElement = document.createElement('div');
             messageElement.classList.add('message', sender === 'user' ? 'user-message' : 'bot-message');
+            
+            // ذخیره متن خام در data attribute
+            messageElement.setAttribute('data-raw-text', text);
+            
             const copyIcon = createCopyIcon(text);
 
             if (sender === 'bot') {
@@ -850,8 +989,13 @@
             chatMessages.appendChild(messageRow);
             chatMessages.scrollTop = chatMessages.scrollHeight;
             
-            // شروع تایپ
-            startTypingAnimation(messageElement, text);
+            // اگر در حالت تست سریع هستیم، بدون انیمیشن نمایش بده
+            if (isQuickTestMode) {
+                messageElement.innerHTML = marked.parse(text);
+            } else {
+                // شروع تایپ
+                startTypingAnimation(messageElement, text);
+            }
         }
         
         function startTypingAnimation(messageElement, text) {
@@ -934,26 +1078,56 @@
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
+        function showUserTypingIndicator() {
+            const messageRow = document.createElement('div');
+            messageRow.id = 'user-typing-indicator-row';
+            messageRow.classList.add('message-row', 'user-row');
+            const indicator = document.createElement('div');
+            indicator.classList.add('message', 'user-message', 'typing-indicator');
+            indicator.innerHTML = '<span></span><span></span><span></span>';
+            messageRow.appendChild(indicator);
+            chatMessages.appendChild(messageRow);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
         function removeTypingIndicator() { const indicatorRow = document.getElementById('typing-indicator-row'); if (indicatorRow) indicatorRow.remove(); }
+        
+        function removeUserTypingIndicator() { 
+            const indicatorRow = document.getElementById('user-typing-indicator-row'); 
+            if (indicatorRow) indicatorRow.remove(); 
+        }
         function startNewChat() {
             chatMessages.innerHTML = '';
             userId = 'web_user_' + Date.now() + Math.random().toString(36).substr(2, 9);
-            lastFinalText = ''; // ریست کردن متغیر متن نهایی
+            finalTranscript = ''; // ریست کردن متغیر متن نهایی
             showTypingIndicator();
             setTimeout(() => { removeTypingIndicator(); addTypedMessage('سلام! من مشاور شغلی «هزارجاب» هستم. برای اینکه بتونم بهتر کمکت کنم، لطفاً خودت رو کامل معرفی کن: نام، سن، جنسیت، وضعیت شغلی فعلی و رشتهٔ تحصیلی.', 'bot'); }, 1000);
         }
-        function toggleSpeechRecognition() { 
-            if (!recognition || sendButton.disabled) return; 
-            if (isRecording) { 
+        function toggleSpeechRecognition() {
+            if (!recognition || sendButton.disabled) return;
+            if (isRecording) {
                 // توقف ضبط صدا
                 recognition.stop();
                 isRecording = false;
                 micButton.classList.remove('recording');
-            } else { 
-                // شروع ضبط صدا - ریست کردن متغیر متن نهایی
-                lastFinalText = userInput.value; // حفظ متن موجود در تکست‌باکس
-                recognition.start();
-            } 
+                // پاک کردن timeout سکوت و ریست کردن شمارنده
+                if (silenceTimeout) {
+                    clearTimeout(silenceTimeout);
+                    silenceTimeout = null;
+                }
+                restartAttempts = 0;
+            } else {
+                // شروع ضبط صدا - حفظ متن موجود در تکست‌باکس
+                finalTranscript = userInput.value;
+                restartAttempts = 0; // ریست کردن شمارنده restart
+                try {
+                    recognition.start();
+                } catch (e) {
+                    console.error('Failed to start recognition:', e);
+                    isRecording = false;
+                    micButton.classList.remove('recording');
+                }
+            }
         }
         
         function toggleTheme() {
@@ -1016,12 +1190,19 @@
                 const messageElement = row.querySelector('.message');
                 if (messageElement && !row.id.includes('typing-indicator')) {
                     const isUser = row.classList.contains('user-row');
-                    // برای حفظ فرمت‌بندی از innerHTML استفاده می‌کنیم
-                    const text = messageElement.innerHTML.trim();
+                    
+                    // دریافت متن خام از data attribute
+                    let text = messageElement.getAttribute('data-raw-text');
+                    
+                    // fallback: اگر data attribute نداشت، از textContent استفاده کن
+                    if (!text) {
+                        text = messageElement.textContent.trim();
+                    }
+                    
                     if (text) {
                         messages.push({
-                            role: isUser ? 'user' : 'bot',
-                            text: text
+                            role: isUser ? 'user' : 'model',
+                            parts: [text]
                         });
                     }
                 }
@@ -1029,6 +1210,7 @@
             
             return messages;
         }
+        
         
         function openShareModal() {
             shareModal.style.display = 'block';
@@ -1074,11 +1256,17 @@
                 recognition.stop();
                 isRecording = false;
                 micButton.classList.remove('recording');
+                // پاک کردن timeout سکوت و ریست کردن شمارنده
+                if (silenceTimeout) {
+                    clearTimeout(silenceTimeout);
+                    silenceTimeout = null;
+                }
+                restartAttempts = 0;
             }
             
             addMessage(messageText, 'user');
             userInput.value = '';
-            lastFinalText = ''; // ریست کردن متغیر متن نهایی
+            finalTranscript = ''; // ریست کردن متغیر متن نهایی
             userInput.dispatchEvent(new Event('input'));
             sendButton.disabled = true; userInput.disabled = true; micButton.disabled = true;
             showTypingIndicator();
@@ -1153,6 +1341,10 @@
                 if (analysisData.career_profile) {
                     userCareerProfile = analysisData.career_profile;
                 }
+
+                // اطمینان از اینکه گزارش نهایی در conversation ذخیره شده
+                // این کار باعث می‌شود که وقتی لینک اشتراک‌گذاری ایجاد می‌شود، گزارش نهایی هم شامل باشد
+                console.log('Analysis completed, final report saved to conversation');
 
             } catch (error) {
                 console.error('Error in startAnalysis:', error);
@@ -1253,10 +1445,310 @@
             }
         }, { passive: false });
 
-        window.addEventListener('load', () => { 
+        // تابع بررسی وضعیت احراز هویت ادمین
+        async function checkAdminAuth() {
+            try {
+                // بررسی session ادمین از طریق سرور
+                const response = await fetch('/admin/check-auth', {
+                    method: 'GET',
+                    credentials: 'include' // برای ارسال session cookie
+                });
+                
+                if (response.ok) {
+                    // اگر درخواست موفق بود، یعنی ادمین لاگین کرده
+                    quickTestButton.classList.add('show');
+                } else if (response.status === 401) {
+                    // اگر 401 بود، یعنی ادمین لاگین نکرده
+                    quickTestButton.classList.remove('show');
+                } else {
+                    // برای سایر خطاها، دکمه را مخفی کن
+                    quickTestButton.classList.remove('show');
+                }
+            } catch (error) {
+                console.error('Error checking admin auth:', error);
+                // در صورت خطا، دکمه را مخفی کن
+                quickTestButton.classList.remove('show');
+            }
+        }
+
+        // تابع تست خودکار
+        async function startQuickTest() {
+            // بررسی مجدد احراز هویت ادمین قبل از شروع تست
+            try {
+                const authResponse = await fetch('/admin/check-auth', {
+                    method: 'GET',
+                    credentials: 'include'
+                });
+                
+                if (!authResponse.ok) {
+                    alert('شما دسترسی ادمین ندارید. لطفاً ابتدا وارد شوید.');
+                    quickTestButton.classList.remove('show');
+                    return;
+                }
+            } catch (error) {
+                alert('خطا در بررسی دسترسی ادمین.');
+                quickTestButton.classList.remove('show');
+                return;
+            }
+            
+            if (sendButton.disabled) {
+                alert('لطفاً صبر کنید تا فرآیند قبلی تمام شود.');
+                return;
+            }
+
+            // تأیید از کاربر
+            if (!confirm('آیا می‌خواهید یک تست خودکار کامل اجرا کنید؟\n\nاین عملیات ممکن است 2-3 دقیقه طول بکشد و چت فعلی پاک خواهد شد.')) {
+                return;
+            }
+
+            // فعال کردن حالت تست سریع (بدون انیمیشن تایپ)
+            isQuickTestMode = true;
+
+            // پاک کردن چت
+            chatMessages.innerHTML = '';
+            userId = 'web_user_' + Date.now() + Math.random().toString(36).substr(2, 9);
+
+            // غیرفعال کردن دکمه‌ها
+            quickTestButton.disabled = true;
+            quickTestButton.textContent = '⏳ در حال اجرا...';
+            sendButton.disabled = true;
+            userInput.disabled = true;
+            micButton.disabled = true;
+            newChatButton.disabled = true;
+
+            try {
+                // نمایش پیام شروع تست
+                addMessage('🤖 تست خودکار شروع شد...', 'bot');
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                // شروع تست real-time
+                await startRealTimeTest();
+
+            } catch (error) {
+                console.error('Error in quick test:', error);
+                removeTypingIndicator();
+                addMessage(`❌ خطا در تست خودکار: ${error.message}`, 'bot');
+            } finally {
+                // فعال کردن مجدد دکمه‌ها
+                quickTestButton.disabled = false;
+                quickTestButton.textContent = '⚡ تست سریع';
+                sendButton.disabled = false;
+                userInput.disabled = false;
+                micButton.disabled = false;
+                newChatButton.disabled = false;
+            }
+        }
+
+        // تابع تست real-time
+        async function startRealTimeTest() {
+            // پاک کردن پیام شروع
+            chatMessages.innerHTML = '';
+
+            // شروع مکالمه با پیام اول
+            const firstMessage = "علی احمدی، 25 سال، مرد، کارشناس توسعه نرم‌افزار در یک شرکت استارتاپی، کارشناسی مهندسی کامپیوتر از دانشگاه تهران. الان تو شرکتم راضی هستم ولی می‌خوام ببینم چه مسیرهای دیگه‌ای می‌تونم برم.";
+            
+            // نمایش typing indicator برای کاربر
+            showUserTypingIndicator();
+            await new Promise(resolve => setTimeout(resolve, 400));
+            removeUserTypingIndicator();
+            
+            // نمایش پیام اول کاربر
+            addMessage(firstMessage, 'user');
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // ارسال پیام اول و دریافت پاسخ
+            try {
+                showTypingIndicator();
+
+                const response = await fetch(CHAT_API_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        user_id: userId, 
+                        message: firstMessage
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                removeTypingIndicator();
+
+                // نمایش پاسخ مشاور
+                addTypedMessage(data.reply, 'bot');
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                // ادامه مکالمه تا زمانی که تحلیل شروع بشه
+                let conversationComplete = false;
+                let messageCount = 0;
+                const maxMessages = 15; // حداکثر تعداد پیام‌ها
+                let currentBotResponse = data.reply; // ذخیره پاسخ فعلی مشاور
+
+                while (!conversationComplete && messageCount < maxMessages) {
+                    // تولید پیام بعدی بر اساس پاسخ مشاور
+                    const nextMessage = await generateNextTestMessage(currentBotResponse);
+                    
+                    if (nextMessage) {
+                        // نمایش typing indicator برای کاربر
+                        showUserTypingIndicator();
+                        await new Promise(resolve => setTimeout(resolve, 400));
+                        removeUserTypingIndicator();
+                        
+                        // نمایش پیام کاربر
+                        addMessage(nextMessage, 'user');
+                        await new Promise(resolve => setTimeout(resolve, 300));
+
+                        // ارسال پیام به سرور
+                        showTypingIndicator();
+
+                        const conversation = getCurrentConversation();
+                        
+                        const nextResponse = await fetch(CHAT_API_ENDPOINT, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                user_id: userId, 
+                                message: nextMessage,
+                                conversation: conversation
+                            }),
+                        });
+
+                        if (!nextResponse.ok) {
+                            throw new Error(`HTTP ${nextResponse.status}: ${nextResponse.statusText}`);
+                        }
+
+                        const nextData = await nextResponse.json();
+                        removeTypingIndicator();
+
+                        if (nextData.reply_type === 'analysis_started') {
+                            // نمایش پیام شروع تحلیل
+                            addTypedMessage(nextData.reply, 'bot');
+
+                            // شروع تحلیل نهایی
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                            await startAnalysis();
+                            conversationComplete = true;
+                        } else {
+                            // نمایش پاسخ عادی
+                            addTypedMessage(nextData.reply, 'bot');
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                            currentBotResponse = nextData.reply; // بروزرسانی پاسخ مشاور
+                        }
+
+                        messageCount++;
+                    } else {
+                        // اگر پیام بعدی تولید نشد، مکالمه رو تمام کن
+                        conversationComplete = true;
+                    }
+                }
+
+                // اگر تحلیل شروع نشده، دستی شروع کن
+                if (!conversationComplete) {
+                    addMessage('تایید می‌کنم', 'user');
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    showTypingIndicator();
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    removeTypingIndicator();
+                    addTypedMessage('تحلیل شما تایید شد. در حال آماده‌سازی گزارش...', 'bot');
+
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    await startAnalysis();
+                }
+
+            } catch (error) {
+                console.error('Error in real-time test:', error);
+                removeTypingIndicator();
+                addMessage('❌ خطا در ارتباط با سرور', 'bot');
+            }
+
+            // نمایش پیام موفقیت
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            addMessage('✅ تست خودکار با موفقیت به پایان رسید!', 'bot');
+            
+            // غیرفعال کردن حالت تست سریع
+            isQuickTestMode = false;
+        }
+
+        // تابع تولید پیام بعدی بر اساس پاسخ مشاور
+        async function generateNextTestMessage(botResponse) {
+            try {
+                // استفاده از هوش مصنوعی برای تولید پاسخ واقعی
+                const conversation = getCurrentConversation();
+                
+                // ایجاد پرامپت برای تولید پاسخ کاربر
+                const userPrompt = `شما نقش یک کاربر واقعی را بازی می‌کنید که با مشاور شغلی صحبت می‌کند. بر اساس مکالمه قبلی و پاسخ مشاور، یک پاسخ طبیعی و واقعی بدهید.
+
+مشاور گفت: "${botResponse}"
+
+لطفاً یک پاسخ کوتاه و طبیعی بدهید که:
+1. به سوال مشاور پاسخ دهد
+2. اطلاعات مفیدی درباره خودتان ارائه دهد
+3. طبیعی و واقعی به نظر برسد
+4. حداکثر 2-3 جمله باشد
+
+فقط پاسخ را بنویسید، بدون توضیح اضافی:`;
+
+                const response = await fetch(CHAT_API_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        user_id: userId + '_test_user', // استفاده از user_id متفاوت برای تست
+                        message: userPrompt,
+                        conversation: conversation
+                    }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.reply || null;
+                }
+            } catch (error) {
+                console.error('Error generating test message:', error);
+            }
+
+            // fallback: اگر هوش مصنوعی کار نکرد، از پاسخ‌های از پیش تعریف شده استفاده کن
+            const fallbackResponses = [
+                "تو دوران نوجوونی خیلی ایلان ماسک رو دوست داشتم. جذابیتش برام این بود که یه آدم واقعی بود که با تکنولوژی داشت دنیا رو تغییر می‌داد.",
+                "معمولاً ویدیوهای مربوط به تکنولوژی جدید، هوش مصنوعی، و استارتاپ‌ها میاد برام.",
+                "فیلم The Social Network خیلی برام جذاب بود. این که چطور یه ایده ساده تبدیل به یه پلتفرم جهانی شد.",
+                "همیشه یاد بگیر، هرگز تسلیم نشو. تجربه‌هام بهم یاد داده که وقتی می‌خوای چیز جدیدی یاد بگیری، اولش سخته.",
+                "یادمه وقتی 5 سالم بود، پدرم یه کامپیوتر قدیمی آورد خونه. خیلی کنجکاو بودم که این چیز چطوری کار می‌کنه.",
+                "آخرین پروژه تیمی که داشتم، توسعه یه API برای یه اپلیکیشن موبایل بود. تو تیم 4 نفره بودیم.",
+                "یه بار deadline یه پروژه خیلی نزدیک بود و یهو متوجه شدیم یه bug بزرگ تو production هست.",
+                "بیشتر به سمت استارتاپ با آزادی عمل بالا کشیده میشم. چون دوست دارم خودم تصمیم بگیرم.",
+                "پروژه‌ای که خیلی ازش لذت بردم، ساخت یه ابزار automation برای خودم بود."
+            ];
+
+            // اگر مشاور سوال پرسیده، پاسخ مناسب بده
+            if (botResponse.includes('؟') || botResponse.includes('چطور') || botResponse.includes('کدوم')) {
+                return fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
+            }
+
+            // اگر مشاور درخواست اطلاعات بیشتری کرده، اطلاعات بیشتری بده
+            if (botResponse.includes('بیشتر') || botResponse.includes('توضیح') || botResponse.includes('درباره')) {
+                return fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
+            }
+
+            // اگر مشاور تحلیل رو پیشنهاد داده، تایید کن
+            if (botResponse.includes('تحلیل') || botResponse.includes('گزارش') || botResponse.includes('بررسی')) {
+                return "بله، ممنون. تحلیل کن.";
+            }
+
+            // در غیر این صورت، پاسخ تصادفی بده
+            return fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
+        }
+
+        // Event listener برای دکمه تست سریع
+        quickTestButton.addEventListener('click', startQuickTest);
+
+        window.addEventListener('load', async () => {
             loadTheme();
-            showTypingIndicator(); 
-            setTimeout(() => { removeTypingIndicator(); addTypedMessage('سلام! من مشاور شغلی «هزارجاب» هستم. برای اینکه بتونم بهتر کمکت کنم، لطفاً خودت رو کامل معرفی کن: نام، سن، جنسیت، وضعیت شغلی فعلی و رشتهٔ تحصیلی.', 'bot'); }, 1000); 
+            await checkAdminAuth(); // بررسی وضعیت ادمین
+            showTypingIndicator();
+            setTimeout(() => { removeTypingIndicator(); addTypedMessage('سلام! من مشاور شغلی «هزارجاب» هستم. برای اینکه بتونم بهتر کمکت کنم، لطفاً خودت رو کامل معرفی کن: نام، سن، جنسیت، وضعیت شغلی فعلی و رشتهٔ تحصیلی.', 'bot'); }, 1000);
         });
     </script>
 </body>

@@ -928,16 +928,9 @@ def _sync_get_shared_chat(share_id: str) -> dict:
     """دریافت چت اشتراکی"""
     try:
         with engine.connect() as conn:
-            # بروزرسانی view_count
-            conn.execute(text("""
-                UPDATE public.shared_chats 
-                SET view_count = view_count + 1, last_viewed_at = NOW()
-                WHERE share_id = :share_id
-            """), {"share_id": share_id})
-            
-            # دریافت اطلاعات shared_chat
+            # ابتدا بررسی کنیم که آیا shared_chat وجود دارد یا نه
             shared_chat_stmt = text("""
-                SELECT original_user_id, created_at, view_count
+                SELECT original_user_id, created_at, view_count, conversation_data, career_profile
                 FROM public.shared_chats 
                 WHERE share_id = :share_id
             """)
@@ -945,33 +938,19 @@ def _sync_get_shared_chat(share_id: str) -> dict:
             shared_result = conn.execute(shared_chat_stmt, {"share_id": share_id}).mappings().first()
             
             if not shared_result:
+                logger.warning(f"Shared chat with share_id {share_id} not found")
                 return None
             
-            # دریافت داده‌های live از جدول conversations
-            user_id_stmt = text("""
-                SELECT id FROM public.users 
-                WHERE telegram_user_id = :user_id
-            """)
+            # بروزرسانی view_count
+            conn.execute(text("""
+                UPDATE public.shared_chats 
+                SET view_count = view_count + 1, last_viewed_at = NOW()
+                WHERE share_id = :share_id
+            """), {"share_id": share_id})
             
-            user_id = conn.execute(user_id_stmt, {"user_id": shared_result["original_user_id"]}).scalar_one_or_none()
-            
-            if not user_id:
-                return None
-            
-            # دریافت conversation_history و career_profile از جدول conversations
-            conversation_stmt = text("""
-                SELECT conversation_history, career_profile 
-                FROM public.conversations 
-                WHERE user_id = :user_id
-            """)
-            
-            conv_result = conn.execute(conversation_stmt, {"user_id": user_id}).mappings().first()
-            
-            if not conv_result:
-                return None
-            
-            conversation_data = conv_result["conversation_history"]
-            career_profile = conv_result["career_profile"]
+            # دریافت conversation_data و career_profile از shared_chats
+            conversation_data = shared_result["conversation_data"]
+            career_profile = shared_result["career_profile"]
             
             logger.info(f"Raw conversation_data type: {type(conversation_data)}")
             
@@ -1054,8 +1033,24 @@ async def extract_evidence_with_llm(history_contents: list):
     # حالا پرامپت از دیکشنری خوانده می‌شود
     prompt = PROMPTS.get('EVIDENCE_EXTRACTION_PROMPT', '{}')
     response = await llm_generate_with_retry(llm_model, history_contents + [{"role": "user", "parts": [prompt]}])
-    clean_json_text = response.text.strip().replace("```json", "").replace("```", "")
-    return json.loads(clean_json_text or "{}")
+    
+    if not response or not response.text:
+        logger.warning("Empty response from LLM in extract_evidence_with_llm")
+        return {}
+    
+    clean_json_text = response.text.strip().replace("```json", "").replace("```", "").strip()
+    
+    if not clean_json_text:
+        logger.warning("Empty JSON text after cleaning in extract_evidence_with_llm")
+        return {}
+    
+    try:
+        return json.loads(clean_json_text)
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error in extract_evidence_with_llm: {e}")
+        logger.error(f"Raw response text: {response.text}")
+        logger.error(f"Cleaned text: {clean_json_text}")
+        return {}
 
 # ... (تابع score_with_ebp بدون تغییر باقی می‌ماند) ...
 def score_with_ebp(ev_json: dict):
@@ -1107,20 +1102,46 @@ async def run_final_analysis_and_matching(user_id: int, history: list) -> str:
         return PROMPTS.get('SYSTEM_ERROR_MESSAGE', 'System error.')
     try:
         history_gemini_fmt = sanitize_history(history)
-        evidence_json = await extract_evidence_with_llm(history_gemini_fmt)
-        career_profile, jz, jz_just = score_with_ebp(evidence_json)
-        personality_paragraph = await build_personality_paragraph(career_profile)
         
-        # final_user_vector = embedding_model.encode(personality_paragraph).tolist()
-        final_user_vector = embed_with_gemini(personality_paragraph)
+        # استخراج evidence با error handling بهتر
+        try:
+            evidence_json = await extract_evidence_with_llm(history_gemini_fmt)
+            if not evidence_json:
+                logger.warning(f"Empty evidence_json for user {user_id}, using default values")
+                evidence_json = {"evidence": [], "education_hint": "Unknown", "complexity_hints": []}
+        except Exception as e:
+            logger.error(f"Error in extract_evidence_with_llm for user {user_id}: {e}")
+            evidence_json = {"evidence": [], "education_hint": "Unknown", "complexity_hints": []}
+        
+        career_profile, jz, jz_just = score_with_ebp(evidence_json)
+        
+        # ساخت personality paragraph با error handling
+        try:
+            personality_paragraph = await build_personality_paragraph(career_profile)
+            if not personality_paragraph:
+                personality_paragraph = "اطلاعات کافی برای تحلیل شخصیت موجود نیست."
+        except Exception as e:
+            logger.error(f"Error in build_personality_paragraph for user {user_id}: {e}")
+            personality_paragraph = "اطلاعات کافی برای تحلیل شخصیت موجود نیست."
+        
+        # تولید embedding با error handling
+        try:
+            final_user_vector = embed_with_gemini(personality_paragraph)
+        except Exception as e:
+            logger.error(f"Error in embed_with_gemini for user {user_id}: {e}")
+            final_user_vector = [0.0] * 768  # default vector
 
         def _sync_db_matching():
-            with engine.connect() as conn:
-                sql_best = text("SELECT title FROM public.jobs WHERE job_zone = :jz ORDER BY embedding <=> CAST(:embedding AS vector) ASC LIMIT 10")
-                best_matches = conn.execute(sql_best, {"jz": jz, "embedding": to_pgvector_literal(final_user_vector)}).mappings().all()
-                sql_worst = text("SELECT title FROM public.jobs WHERE job_zone = :jz ORDER BY embedding <=> CAST(:embedding AS vector) DESC LIMIT 10")
-                worst_matches = conn.execute(sql_worst, {"jz": jz, "embedding": to_pgvector_literal(final_user_vector)}).mappings().all()
-                return [r['title'] for r in best_matches], [r['title'] for r in worst_matches]
+            try:
+                with engine.connect() as conn:
+                    sql_best = text("SELECT title FROM public.jobs WHERE job_zone = :jz ORDER BY embedding <=> CAST(:embedding AS vector) ASC LIMIT 10")
+                    best_matches = conn.execute(sql_best, {"jz": jz, "embedding": to_pgvector_literal(final_user_vector)}).mappings().all()
+                    sql_worst = text("SELECT title FROM public.jobs WHERE job_zone = :jz ORDER BY embedding <=> CAST(:embedding AS vector) DESC LIMIT 10")
+                    worst_matches = conn.execute(sql_worst, {"jz": jz, "embedding": to_pgvector_literal(final_user_vector)}).mappings().all()
+                    return [r['title'] for r in best_matches], [r['title'] for r in worst_matches]
+            except Exception as e:
+                logger.error(f"Error in database matching for user {user_id}: {e}")
+                return [], []
 
         best_jobs_list, worst_jobs_list = await asyncio.to_thread(_sync_db_matching)
         
@@ -1132,17 +1153,27 @@ async def run_final_analysis_and_matching(user_id: int, history: list) -> str:
         )
         
         enhanced_report_prompt = f"{PROMPTS.get('OUTPUT_PROTOCOL', '')}\n\n{report_prompt}"
-        final_report_response = await llm_generate_with_retry(llm_model, enhanced_report_prompt)
-        final_report = (final_report_response.text or "گزارشی تولید نشد.").strip()
+        
+        # تولید گزارش نهایی با error handling
+        try:
+            final_report_response = await llm_generate_with_retry(llm_model, enhanced_report_prompt)
+            final_report = (final_report_response.text or "گزارشی تولید نشد.").strip()
+        except Exception as e:
+            logger.error(f"Error in final report generation for user {user_id}: {e}")
+            final_report = "متاسفانه در تولید گزارش نهایی خطایی رخ داد."
 
-        await save_full_profile(
-            user_id=user_id, career_profile=career_profile, evidence=evidence_json,
-            riasec_scores=career_profile.get("interests"), work_values_scores=career_profile.get("work_values"),
-            work_styles_scores=career_profile.get("work_styles"), job_zone_estimate=jz,
-            job_zone_justification=jz_just, personality_paragraph=personality_paragraph,
-            user_embedding=final_user_vector, final_report_text=final_report
-        )
-        await mark_report_generated(user_id)
+        # ذخیره پروفایل با error handling
+        try:
+            await save_full_profile(
+                user_id=user_id, career_profile=career_profile, evidence=evidence_json,
+                riasec_scores=career_profile.get("interests"), work_values_scores=career_profile.get("work_values"),
+                work_styles_scores=career_profile.get("work_styles"), job_zone_estimate=jz,
+                job_zone_justification=jz_just, personality_paragraph=personality_paragraph,
+                user_embedding=final_user_vector, final_report_text=final_report
+            )
+            await mark_report_generated(user_id)
+        except Exception as e:
+            logger.error(f"Error in save_full_profile for user {user_id}: {e}")
         
         return final_report
 
@@ -1434,6 +1465,7 @@ def admin_all_chats():
                     c.created_at,
                     c.updated_at,
                     c.report_generated,
+                    c.career_profile,
                     u.telegram_user_id,
                     u.first_name,
                     sc.share_id,
@@ -1501,6 +1533,14 @@ def admin_all_chats():
                 else:
                     share_url = f"/shared/{share_id}"
                 
+                # پردازش career_profile
+                career_profile = row['career_profile']
+                if isinstance(career_profile, str):
+                    try:
+                        career_profile = json.loads(career_profile)
+                    except json.JSONDecodeError:
+                        career_profile = None
+                
                 chat_data = {
                     'conversation_id': row['conversation_id'],
                     'user_id': row['user_id'],
@@ -1509,6 +1549,7 @@ def admin_all_chats():
                     'created_at': row['created_at'].isoformat() if row['created_at'] else None,
                     'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None,
                     'report_generated': row['report_generated'].isoformat() if row['report_generated'] else None,
+                    'career_profile': career_profile,
                     'share_id': share_id,
                     'view_count': row['view_count'] or 0,
                     'last_viewed_at': row['last_viewed_at'].isoformat() if row['last_viewed_at'] else None,
@@ -1527,6 +1568,12 @@ def admin_all_chats():
     except Exception as e:
         logger.error(f"Error getting all chats: {e}", exc_info=True)
         return jsonify({'error': 'خطا در دریافت لیست چت‌ها'}), 500
+
+@app.route('/admin/check-auth')
+@require_admin_auth
+def admin_check_auth():
+    """بررسی احراز هویت ادمین"""
+    return jsonify({'authenticated': True}), 200
 
 @app.route('/admin/data', methods=['GET', 'POST'])
 @require_admin_auth
@@ -1642,6 +1689,7 @@ def chat():
     data = request.json
     web_user_id = data.get('user_id')
     user_message = data.get('message', '').strip()
+    conversation = data.get('conversation', [])  # دریافت conversation از فرانت‌اند
 
     if not web_user_id or not user_message:
         return jsonify({'error': 'User ID and message are required'}), 400
@@ -1650,7 +1698,7 @@ def chat():
         return jsonify({'reply': 'متاسفانه سرویس هوش مصنوعی در حال حاضر در دسترس نیست.'}), 503
 
     try:
-        response_data = asyncio.run(handle_web_message(web_user_id, user_message, request))
+        response_data = asyncio.run(handle_web_message(web_user_id, user_message, request, conversation))
         return jsonify(response_data)
     except Exception as e:
         error_msg = str(e)
@@ -1684,10 +1732,135 @@ def start_analysis():
         logger.error(f"Error in /start-analysis for user {web_user_id}: {e}", exc_info=True)
         return jsonify({'final_report': '⚠️ یک خطای داخلی در سرور هنگام تحلیل رخ داد.'}), 500
 
+@app.route('/admin/auto-test', methods=['POST'])
+@require_admin_auth
+def admin_auto_test():
+    """
+    تست خودکار کامل سیستم با یک مکالمه شبیه‌سازی شده
+    برای ادمین که بدون نیاز به تعامل کاربر، کل فرآیند را طی می‌کند
+    """
+    try:
+        # سناریوی تست: یک پروفایل واقع‌گرایانه
+        test_scenario = {
+            "intro": "علی احمدی، 25 سال، مرد، کارشناس توسعه نرم‌افزار در یک شرکت استارتاپی، کارشناسی مهندسی کامپیوتر از دانشگاه تهران. الان تو شرکتم راضی هستم ولی می‌خوام ببینم چه مسیرهای دیگه‌ای می‌تونم برم.",
+
+            "savickas_responses": [
+                # سوال 1: الگوها
+                "تو دوران نوجوونی خیلی ایلان ماسک رو دوست داشتم. جذابیتش برام این بود که یه آدم واقعی بود که با تکنولوژی داشت دنیا رو تغییر می‌داد. این که می‌تونست ایده‌های بزرگ رو عملی کنه و مرزها رو جابجا کنه، خیلی برام الهام‌بخش بود.",
+
+                # سوال 2: علاقه‌مندی‌ها
+                "معمولاً ویدیوهای مربوط به تکنولوژی جدید، هوش مصنوعی، و استارتاپ‌ها میاد برام. همچنین ویدیوهای آموزش برنامه‌نویسی و معماری سیستم‌های بزرگ. خیلی دوست دارم درباره اینکه چطور سیستم‌های پیچیده ساخته میشن بخونم.",
+
+                # سوال 3: داستان محبوب
+                "فیلم The Social Network خیلی برام جذاب بود. این که چطور یه ایده ساده تبدیل به یه پلتفرم جهانی شد و چالش‌هایی که تو این مسیر پیش اومد. همچنین فیلم Interstellar، به خاطر ترکیب علم و احساسات انسانی.",
+
+                # سوال 4: شعار شخصی
+                "همیشه یاد بگیر، هرگز تسلیم نشو. تجربه‌هام بهم یاد داده که وقتی می‌خوای چیز جدیدی یاد بگیری، اولش سخته ولی اگه ادامه بدی، همیشه یه نقطه عطف میاد که همه چیز جا می‌افته.",
+
+                # سوال 5: اولین خاطرات
+                "یادمه وقتی 5 سالم بود، پدرم یه کامپیوتر قدیمی آورد خونه. اولین بار بود که یه صفحه آبی با نوشته‌های سفید می‌دیدم. خیلی کنجکاو بودم که این چیز چطوری کار می‌کنه. خاطره دیگه اینکه وقتی اولین بار تونستم یه بازی ساده رو تو کامپیوتر اجرا کنم، احساس قدرت می‌کردم. خاطره سوم اینکه یه بار یه اسباب‌بازی رو باز کردم ببینم داخلش چیه و خراب شد، ولی یاد گرفتم چطوری چیزها کار می‌کنن."
+            ],
+
+            "additional_responses": [
+                # سوال تجربی: کار تیمی
+                "آخرین پروژه تیمی که داشتم، توسعه یه API برای یه اپلیکیشن موبایل بود. تو تیم 4 نفره بودیم و من مسئول backend بودم. یه مشکل بزرگی که پیش اومد این بود که دو نفر از تیم نظرهای متفاوتی درباره معماری داشتن. من پیشنهاد دادم که یه POC برای هر دو روش بنویسیم و بسنجیم کدوم بهتره. در نهایت راه حل من انتخاب شد و پروژه موفق شد.",
+
+                # سوال تجربی: تحمل استرس
+                "یه بار deadline یه پروژه خیلی نزدیک بود و یهو متوجه شدیم یه bug بزرگ تو production هست. همه استرس داشتن ولی من آروم موندم، اول مشکل رو شناسایی کردم، بعد یه راه حل موقت پیاده کردم تا سرویس بالا بمونه، و بعدش fix اصلی رو زدم. تو این شرایط، تمرکز روی حل مشکل به جای نگرانی، کلیدی بود.",
+
+                # سوال موقعیتی: ترجیحات شغلی
+                "بیشتر به سمت گزینه B کشیده میشم - یعنی استارتاپ با آزادی عمل بالا. چون دوست دارم خودم تصمیم بگیرم و تأثیر مستقیم کارم رو ببینم. البته امنیت شغلی هم مهمه، ولی فکر می‌کنم یادگیری و رشد سریع ارزش ریسک کردن رو داره.",
+
+                # سوال هویتی: پروژه مورد علاقه
+                "پروژه‌ای که خیلی ازش لذت بردم، ساخت یه ابزار automation برای خودم بود که کارهای تکراری رو انجام می‌داد. اون احساسی که وقتی کد می‌نویسی و می‌بینی چیزی که ساختی داره کار می‌کنه، خیلی رضایت‌بخشه. جذابیتش این بود که هم مشکل واقعی رو حل می‌کرد هم یاد گرفتم چطور سیستم‌ها رو بهینه کنم."
+            ]
+        }
+
+        # ایجاد user_id منحصر به فرد برای تست
+        test_user_id = f'admin_test_{int(datetime.now().timestamp())}_{secrets.token_hex(4)}'
+
+        # شبیه‌سازی مکالمه
+        conversation_log = []
+
+        async def simulate_conversation():
+            # مرحله 1: معرفی اولیه
+            logger.info("Auto-test: Starting conversation with intro")
+            intro_response = await handle_web_message(test_user_id, test_scenario["intro"], request)
+            conversation_log.append({
+                "user": test_scenario["intro"],
+                "bot": intro_response.get("reply", ""),
+                "type": intro_response.get("reply_type", "standard")
+            })
+
+            # مرحله 2: پاسخ به سوالات ساویکاس (5 سوال اول)
+            for idx, response_text in enumerate(test_scenario["savickas_responses"], 1):
+                logger.info(f"Auto-test: Sending Savickas response {idx}/5")
+                bot_response = await handle_web_message(test_user_id, response_text, request)
+                conversation_log.append({
+                    "user": response_text,
+                    "bot": bot_response.get("reply", ""),
+                    "type": bot_response.get("reply_type", "standard")
+                })
+
+                # بررسی اگر تحلیل شروع شده باشد
+                if bot_response.get("reply_type") == "analysis_started":
+                    logger.info("Auto-test: Analysis started early, breaking loop")
+                    break
+
+            # مرحله 3: پاسخ به سوالات تکمیلی
+            if conversation_log[-1]["type"] != "analysis_started":
+                for idx, response_text in enumerate(test_scenario["additional_responses"], 1):
+                    logger.info(f"Auto-test: Sending additional response {idx}/{len(test_scenario['additional_responses'])}")
+                    bot_response = await handle_web_message(test_user_id, response_text, request)
+                    conversation_log.append({
+                        "user": response_text,
+                        "bot": bot_response.get("reply", ""),
+                        "type": bot_response.get("reply_type", "standard")
+                    })
+
+                    # بررسی اگر تحلیل شروع شده باشد
+                    if bot_response.get("reply_type") == "analysis_started":
+                        logger.info("Auto-test: Analysis started, breaking loop")
+                        break
+
+            # مرحله 4: اگر هنوز تحلیل شروع نشده، دستور تایید می‌دهیم
+            if conversation_log[-1]["type"] != "analysis_started":
+                logger.info("Auto-test: Forcing analysis by sending confirmation")
+                confirm_response = await handle_web_message(test_user_id, "تایید می‌کنم", request)
+                conversation_log.append({
+                    "user": "تایید می‌کنم",
+                    "bot": confirm_response.get("reply", ""),
+                    "type": confirm_response.get("reply_type", "standard")
+                })
+
+            # مرحله 5: دریافت گزارش نهایی
+            logger.info("Auto-test: Requesting final analysis report")
+            final_report, career_profile = await trigger_analysis_for_user(test_user_id)
+
+            return {
+                "success": True,
+                "conversation": conversation_log,
+                "final_report": final_report,
+                "career_profile": career_profile,
+                "test_user_id": test_user_id
+            }
+
+        # اجرای شبیه‌سازی
+        result = asyncio.run(simulate_conversation())
+        return jsonify(result), 200
+
+    except Exception as e:
+        logger.error(f"Error in auto-test: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "message": "خطا در اجرای تست خودکار"
+        }), 500
+
 async def trigger_analysis_for_user(web_user_id: str) -> tuple[str, dict | None]:
     """
     >>> CHANGE: This function now cleans up the conversation history in the database
-    after the final report is generated.
+    after the final report is generated and ensures the final report is included.
     """
     db_user_id = await get_or_create_user(web_user_id)
     if not db_user_id:
@@ -1728,6 +1901,15 @@ async def trigger_analysis_for_user(web_user_id: str) -> tuple[str, dict | None]
     # If the replacement happened, save the clean history back to the database
     if found_and_replaced:
         await save_conversation(db_user_id, clean_history)
+    else:
+        # اگر signal پیدا نشد، مطمئن شویم که گزارش نهایی در history موجود است
+        # بررسی کنیم که آیا گزارش نهایی در آخرین پیام موجود است یا نه
+        if clean_history and clean_history[-1].get("role") == "model":
+            last_parts = clean_history[-1].get("parts", [])
+            if last_parts and final_report not in last_parts[0]:
+                # اگر گزارش نهایی در آخرین پیام نیست، آن را اضافه کنیم
+                clean_history.append({"role": "model", "parts": [final_report]})
+                await save_conversation(db_user_id, clean_history)
     # --- END: NEW LOGIC ---
 
     # Fetch the updated profile from the DB after analysis
@@ -1736,7 +1918,7 @@ async def trigger_analysis_for_user(web_user_id: str) -> tuple[str, dict | None]
     
     return final_report, career_profile
 
-async def handle_web_message(web_user_id: str, user_message: str, request_obj=None) -> dict:
+async def handle_web_message(web_user_id: str, user_message: str, request_obj=None, conversation=None) -> dict:
     user_info = None
     if request_obj:
         user_info = extract_user_info_from_request(request_obj)
@@ -1745,8 +1927,12 @@ async def handle_web_message(web_user_id: str, user_message: str, request_obj=No
     if not db_user_id:
         return {'reply_type': 'standard', 'reply': "خطا در دسترسی به اطلاعات کاربری شما."}
 
-    convo_data = await get_conversation(db_user_id)
-    history_gemini_fmt = sanitize_history(convo_data.get("conversation_history", []))
+    # اگر conversation از فرانت‌اند ارسال شده، از آن استفاده کن، در غیر این صورت از دیتابیس بخون
+    if conversation and len(conversation) > 0:
+        history_gemini_fmt = sanitize_history(conversation)
+    else:
+        convo_data = await get_conversation(db_user_id)
+        history_gemini_fmt = sanitize_history(convo_data.get("conversation_history", []))
 
     contents = history_gemini_fmt + [{"role": "user", "parts": [user_message]}]
     response = await llm_generate_with_retry(llm_model, contents)

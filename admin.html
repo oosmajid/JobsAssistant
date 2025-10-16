@@ -740,6 +740,9 @@
             // Initial load
             loadAdminData();
             
+            // ذخیره وضعیت ادمین در localStorage برای نمایش دکمه تست سریع
+            localStorage.setItem('admin_authenticated', 'true');
+
             // Admin logout function - Open Modal
             window.logout = function() {
                 document.getElementById('logoutModal').classList.add('show');
@@ -753,6 +756,8 @@
             // Confirm logout
             window.confirmLogout = function() {
                 showToast('در حال خروج...', 'info');
+                // پاک کردن وضعیت ادمین از localStorage
+                localStorage.removeItem('admin_authenticated');
                 // مستقیماً به route خروج برویم که session را پاک می‌کند
                 window.location.href = '/admin/logout';
             };

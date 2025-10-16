@@ -744,22 +744,18 @@
             const messageElement = document.createElement('div');
             messageElement.classList.add('message', sender === 'user' ? 'user-message' : 'bot-message');
             
-            // تبدیل خط‌های جدید به <br> و تبدیل **text** به <strong>text</strong>
-            let processedText = text;
-            
+            // پردازش متن بر اساس نوع فرستنده
             if (sender === 'bot') {
+                // برای پیام‌های ربات، فقط markdown را پردازش کن
                 messageElement.innerHTML = marked.parse(text);
             } else {
-                // برای پیام‌های کاربر escape کردن و تبدیل خط‌های جدید
+                // برای پیام‌های کاربر، فقط escape کن و خط‌های جدید را تبدیل کن
                 const sanitizedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                // تبدیل **text** به <strong>text</strong>
-                processedText = sanitizedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                // تبدیل خط‌های جدید به <br>
-                processedText = processedText.replace(/\n/g, '<br>');
+                const processedText = sanitizedText.replace(/\n/g, '<br>');
                 messageElement.innerHTML = processedText;
             }
             
-            // ایجاد دکمه کپی
+            // ایجاد دکمه کپی (استفاده از متن اصلی)
             const copyIcon = createCopyIcon(text);
             
             if (sender === 'user') {
@@ -778,6 +774,7 @@
             chatMessages.appendChild(messageRow);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
+        
         
         function showError(message) {
             loadingContainer.innerHTML = `

@@ -270,3 +270,5 @@ backup/
 local_*
 dev_*
 debug_*
+
+.claude/
