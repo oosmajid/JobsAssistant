@@ -114,9 +114,8 @@ def create_extensions():
             trx = conn.begin()
             try:
                 conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'))
-                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
                 trx.commit()
-                log.info("✅ Extensions ready: uuid-ossp, vector")
+                log.info("✅ Extension ready: uuid-ossp")
             except Exception as e:
                 trx.rollback()
                 log.error(f"❌ create_extensions: {e}")
@@ -169,7 +168,6 @@ def create_tables():
         job_zone_estimate INTEGER,
         job_zone_justification TEXT,
         personality_paragraph TEXT,
-        user_embedding vector,
         final_report_text TEXT,
         report_generated TIMESTAMP,
         created_at TIMESTAMP DEFAULT NOW(),
@@ -215,7 +213,6 @@ def create_tables():
         id INTEGER PRIMARY KEY,
         title TEXT NOT NULL,
         job_zone INT,
-        embedding vector,
         onet_code VARCHAR(50),
         description TEXT,
         onet_profile JSONB
@@ -224,7 +221,7 @@ def create_tables():
     -- simple btree index on job_zone for filtering
     CREATE INDEX IF NOT EXISTS jobs_job_zone_idx ON public.jobs (job_zone);
 
-    -- optional ANN index (works without fixed dim too; requires pgvector ≥ 0.5)
+    -- ایندکس وکتور را حذف کنید
     -- CREATE INDEX IF NOT EXISTS jobs_embedding_idx
     --   ON public.jobs USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
     """
@@ -373,8 +370,6 @@ def import_jobs_from_csv(csv_path: str = CSV_PATH):
                     title = row.get("title")
                     desc  = row.get("description")
                     onet_profile = json.loads(row.get("onet_profile") or "{}")
-                    emb   = json.loads(row.get("embedding") or "[]")
-                    emb_literal = to_pgvector_literal(emb)
 
                     batch.append({
                         "id": id_,
@@ -382,7 +377,6 @@ def import_jobs_from_csv(csv_path: str = CSV_PATH):
                         "title": title,
                         "description": desc,
                         "onet_profile": json.dumps(onet_profile, ensure_ascii=False),
-                        "embedding": emb_literal
                     })
 
                     if len(batch) >= batch_size:
@@ -408,14 +402,13 @@ def _flush_jobs_batch(conn, rows):
         # embedding as CAST(:embedding AS vector)
         conn.execute(
             text("""
-                INSERT INTO public.jobs (id, onet_code, title, description, onet_profile, embedding)
-                VALUES (:id, :onet_code, :title, :description, CAST(:onet_profile AS jsonb), CAST(:embedding AS vector))
+                INSERT INTO public.jobs (id, onet_code, title, description, onet_profile)
+                VALUES (:id, :onet_code, :title, :description, CAST(:onet_profile AS jsonb))
                 ON CONFLICT (id) DO UPDATE SET
                     onet_code    = EXCLUDED.onet_code,
                     title        = EXCLUDED.title,
                     description  = EXCLUDED.description,
-                    onet_profile = EXCLUDED.onet_profile,
-                    embedding    = EXCLUDED.embedding;
+                    onet_profile = EXCLUDED.onet_profile
             """),
             rows
         )

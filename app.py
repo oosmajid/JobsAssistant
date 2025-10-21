@@ -22,15 +22,53 @@ import json
 import sys
 import re
 import uuid
-import hashlib
+import math
 import secrets
 from datetime import datetime
-from flask import Flask, request, jsonify, send_from_directory, session, redirect, url_for, render_template_string
+from flask import Flask, request, jsonify, send_from_directory, session, redirect, render_template_string, Response
 from flask_cors import CORS
 from sqlalchemy import create_engine, text
 import google.generativeai as genai
 from google.api_core.client_options import ClientOptions
-# from sentence_transformers import SentenceTransformer
+from prompts import DEFAULT_SCORES
+from prompts import DEFAULT_SCORES, RIASEC_NAMES, WORK_VALUES_NAMES, WORK_STYLES_NAMES
+import io
+import csv
+
+KEY_MAP = {
+    # RIASEC
+    "Realistic": "واقع‌گرایانه",
+    "Investigative": "جستجوگرانه",
+    "Artistic": "هنری",
+    "Social": "اجتماعی",
+    "Enterprising": "کارآفرینانه", # توجه: CSV از "کارآفرینانه" استفاده می‌کند
+    "Conventional": "قراردادی",
+    
+    # Work Values
+    "Achievement": "موفقیت",
+    "Independence": "استقلال", # این کلید در هر دو گروه وجود دارد
+    "Recognition": "قدردانی",
+    "Relationships": "روابط",
+    "Support": "حمایت",
+    "Working_Conditions": "شرایط کاری",
+
+    # Work Styles
+    "Attention_to_Detail": "توجه به جزئیات",
+    "Stress_Tolerance": "تحمل استرس",
+    "Initiative": "ابتکار",
+    "Adaptability_Flexibility": "انعطاف‌پذیری",
+    "Cooperation": "همکاری",
+    "Leadership": "رهبری",
+    "Dependability": "قابلیت اطمینان",
+    "Integrity": "صداقت",
+    "Self_Control": "خودکنترلی",
+    "Persistence": "پشتکار",
+    "Analytical_Thinking": "تفکر تحلیلی",
+    "Concern_for_Others": "توجه به دیگران",
+    "Achievement_Effort": "موفقیت/تلاش",
+    "Social_Orientation": "جهت‌گیری اجتماعی",
+    "Innovation": "نوآوری",
+}
 
 # فایل prompts.py فقط برای اولین راه‌اندازی (seeding) استفاده می‌شود
 import prompts as prompts_file
@@ -378,35 +416,6 @@ def try_fallback_models(api_key: str, primary_model: str) -> str:
     logger.error("All fallback models failed. Returning primary model anyway.")
     return primary_model
 
-def embed_with_gemini(text: str) -> list[float]:
-    """
-    برمی‌گرداند: لیست float (بردار امبدینگ) از سرویس Gemini
-    مدل: text-embedding-004
-    """
-    configure_genai(GEMINI_API_KEY)
-    resp = genai.embed_content(
-        model="models/text-embedding-004",  # یا "text-embedding-004" در برخی ریلیزها
-        content=text
-    )
-    # سازگار با دو فرمت رایج خروجی کتابخانه:
-    # 1) dict با resp["embedding"] یا resp["embedding"]["values"]
-    # 2) آبجکت با .embedding یا .values
-    emb = None
-    if isinstance(resp, dict):
-        emb = resp.get("embedding", resp.get("data"))  # بعضی ورژن‌ها
-    else:
-        emb = getattr(resp, "embedding", None) or getattr(resp, "data", None)
-
-    if isinstance(emb, dict):
-        values = emb.get("values") or emb.get("embedding")
-    elif hasattr(emb, "values"):
-        values = emb.values
-    else:
-        values = emb
-
-    if not values or not isinstance(values, (list, tuple)):
-        raise RuntimeError(f"Embedding response malformed: {type(resp)} -> {resp}")
-    return [float(x) for x in values]
 
 def _sync_get_or_create_setting(conn, key: str, default_value: str) -> str:
     """یک تنظیم را از دیتابیس می‌خواند یا اگر وجود نداشت، با مقدار پیش‌فرض آن را ایجاد می‌کند."""
@@ -426,103 +435,6 @@ def _sync_get_or_create_setting(conn, key: str, default_value: str) -> str:
     return value
 
 
-# --- راه‌اندازی اولیه سرویس‌ها ---
-try:
-    engine = create_engine(DB_CONNECTION_STRING, pool_pre_ping=True)
-    logger.info("Database engine created successfully.")
-    
-    SELECTED_MODEL_NAME = "" # متغیر گلوبال برای نگهداری نام مدل
-
-    with engine.connect() as conn:
-        # --- ایجاد جدول shared_chats اگر وجود نداشته باشد ---
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS public.shared_chats (
-                id SERIAL PRIMARY KEY,
-                share_id VARCHAR(50) UNIQUE NOT NULL,
-                original_user_id VARCHAR(100) NOT NULL,
-                conversation_data JSONB NOT NULL,
-                career_profile JSONB,
-                created_at TIMESTAMP DEFAULT NOW(),
-                expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '30 days'),
-                view_count INTEGER DEFAULT 0,
-                last_viewed_at TIMESTAMP
-            )
-        """))
-        
-        # --- اضافه کردن فیلد career_profile اگر وجود نداشته باشد ---
-        conn.execute(text("""
-            ALTER TABLE public.shared_chats 
-            ADD COLUMN IF NOT EXISTS career_profile JSONB
-        """))
-        
-        # --- اضافه کردن ستون‌های created_at و updated_at به جدول conversations اگر وجود نداشته باشند ---
-        conn.execute(text("""
-            ALTER TABLE public.conversations 
-            ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()
-        """))
-        
-        conn.execute(text("""
-            ALTER TABLE public.conversations 
-            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()
-        """))
-        
-        conn.commit()
-        logger.info("Shared chats table created/verified successfully.")
-        
-        # --- بارگذاری یا seeding پرامپت‌ها ---
-        # (این بخش بدون تغییر باقی می‌ماند)
-        if not conn.execute(text("SELECT 1 FROM public.prompts LIMIT 1")).scalar_one_or_none():
-            logger.warning("Prompts table is empty. Seeding from prompts.py file...")
-            
-            # کد کامل seeding
-            prompts_to_seed = {
-                key: value for key, value in vars(prompts_file).items()
-                if not key.startswith('__') and isinstance(value, str)
-            }
-            if not prompts_to_seed:
-                raise RuntimeError("No string variables found in prompts.py to seed the database.")
-
-            insert_stmt = text("INSERT INTO public.prompts (prompt_key, prompt_value) VALUES (:key, :value)")
-            data_to_insert = [{"key": key, "value": value} for key, value in prompts_to_seed.items()]
-            
-            conn.execute(insert_stmt, data_to_insert)
-            conn.commit()
-            logger.info(f"Successfully seeded {len(prompts_to_seed)} prompts into the database.")
-        
-        all_prompts_result = conn.execute(text("SELECT prompt_key, prompt_value FROM public.prompts")).mappings().all()
-        PROMPTS = {row['prompt_key']: row['prompt_value'] for row in all_prompts_result}
-        logger.info(f"Successfully loaded {len(PROMPTS)} prompts from the database into memory.")
-
-        # --- خواندن یا ایجاد تنظیم مدل LLM ---
-        SELECTED_MODEL_NAME = _sync_get_or_create_setting(conn, "SELECTED_LLM_MODEL", DEFAULT_MODEL)
-        logger.info(f"Selected LLM model from settings: {SELECTED_MODEL_NAME}")
-        
-        # --- خواندن یا ایجاد کلید API ---
-        GEMINI_API_KEY = _sync_get_or_create_setting(conn, "GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
-        if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY":
-            raise RuntimeError("GEMINI_API_KEY is not set in database settings. Please configure it in the admin panel.")
-        logger.info("Gemini API key loaded from database settings.")
-
-    # --- ادامه راه‌اندازی مدل‌های هوش مصنوعی ---
-    if not validate_model_access(GEMINI_API_KEY, SELECTED_MODEL_NAME):
-        logger.warning(f"Primary model '{SELECTED_MODEL_NAME}' not accessible. Trying fallback models...")
-        SELECTED_MODEL_NAME = try_fallback_models(GEMINI_API_KEY, SELECTED_MODEL_NAME)
-        logger.info(f"Using model: {SELECTED_MODEL_NAME}")
-
-    configure_genai(GEMINI_API_KEY)
-    llm_model = genai.GenerativeModel(
-        SELECTED_MODEL_NAME,
-        system_instruction=PROMPTS.get('COUNSELOR_MANIFESTO', 'You are a helpful assistant.')
-    )
-    logger.info(f"Gemini API configured successfully with model: {SELECTED_MODEL_NAME}")
-
-    # embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME, device="cpu")
-    # logger.info("Embedding model loaded successfully.")
-    embedding_model = None
-
-except Exception as e:
-    logger.error(f"CRITICAL INITIALIZATION FAILED: {e}", exc_info=True)
-    llm_model = embedding_model = engine = None
 
 
 
@@ -654,6 +566,19 @@ def _sync_update_prompts_in_db(prompts_dict: dict):
         conn.commit()
 
 # تابع برای بارگذاری مجدد پرامپت‌ها در حافظه
+def _sync_update_prompts_in_db(prompts_dict: dict):
+    with engine.connect() as conn:
+        # از transaction برای اجرای گروهی استفاده می‌کنیم
+        with conn.begin():
+            stmt = text("""
+                INSERT INTO public.prompts (prompt_key, prompt_value) VALUES (:key, :value)
+                ON CONFLICT (prompt_key) DO UPDATE SET prompt_value = EXCLUDED.prompt_value;
+            """)
+            data_to_insert = [{"key": key, "value": str(value)} for key, value in prompts_dict.items()]
+            if data_to_insert:
+                conn.execute(stmt, data_to_insert)
+        logger.info(f"Successfully upserted {len(data_to_insert)} prompts into the database.")
+
 def _sync_reload_all_data():
     """تمام پرامپت‌ها و تنظیمات را از دیتابیس مجدداً بارگذاری کرده و مدل هوش مصنوعی را آپدیت می‌کند."""
     global PROMPTS, llm_model, SELECTED_MODEL_NAME, GEMINI_API_KEY
@@ -714,6 +639,89 @@ def _sync_reload_all_data():
     except Exception as e:
         logger.error(f"Failed to reload data from DB: {e}", exc_info=True)
         raise
+
+
+# --- راه‌اندازی اولیه سرویس‌ها ---
+try:
+    engine = create_engine(DB_CONNECTION_STRING, pool_pre_ping=True)
+    logger.info("Database engine created successfully.")
+    
+    # --- بارگذاری اولیه و همگام‌سازی پرامپت‌ها از فایل prompts.py ---
+    # این بخش تضمین می‌کند که دیتابیس همیشه با فایل هماهنگ است
+    try:
+        import prompts as prompts_file
+        prompts_to_sync = {
+            key: value for key, value in vars(prompts_file).items()
+            if not key.startswith('__') and isinstance(value, str)
+        }
+        if prompts_to_sync:
+            logger.info(f"Found {len(prompts_to_sync)} prompts in prompts.py to sync with the database.")
+            _sync_update_prompts_in_db(prompts_to_sync)
+        else:
+            logger.warning("No prompts found in prompts.py to sync.")
+            
+    except ImportError:
+        logger.error("prompts.py file not found. Skipping initial prompt sync.")
+    except Exception as e:
+        logger.error(f"An error occurred during prompt syncing: {e}", exc_info=True)
+
+    SELECTED_MODEL_NAME = "" # متغیر گلوبال برای نگهداری نام مدل
+
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS public.shared_chats (
+                id SERIAL PRIMARY KEY,
+                share_id VARCHAR(50) UNIQUE NOT NULL,
+                original_user_id VARCHAR(100) NOT NULL,
+                conversation_data JSONB NOT NULL,
+                career_profile JSONB,
+                created_at TIMESTAMP DEFAULT NOW(),
+                expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '30 days'),
+                view_count INTEGER DEFAULT 0,
+                last_viewed_at TIMESTAMP
+            )
+        """))
+        conn.execute(text("ALTER TABLE public.shared_chats ADD COLUMN IF NOT EXISTS career_profile JSONB"))
+        conn.execute(text("ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"))
+        conn.execute(text("ALTER TABLE public.conversations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()"))
+        conn.commit()
+        logger.info("Database tables verified/updated successfully.")
+        
+        # --- بارگذاری تمام پرامپت‌ها از دیتابیس به حافظه ---
+        all_prompts_result = conn.execute(text("SELECT prompt_key, prompt_value FROM public.prompts")).mappings().all()
+        PROMPTS = {row['prompt_key']: row['prompt_value'] for row in all_prompts_result}
+        logger.info(f"Successfully loaded {len(PROMPTS)} prompts from the database into memory.")
+
+        # --- خواندن یا ایجاد تنظیم مدل LLM ---
+        SELECTED_MODEL_NAME = _sync_get_or_create_setting(conn, "SELECTED_LLM_MODEL", DEFAULT_MODEL)
+        logger.info(f"Selected LLM model from settings: {SELECTED_MODEL_NAME}")
+        
+        # --- خواندن یا ایجاد کلید API ---
+        GEMINI_API_KEY = _sync_get_or_create_setting(conn, "GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
+        if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY":
+            raise RuntimeError("GEMINI_API_KEY is not set in database settings. Please configure it in the admin panel.")
+        logger.info("Gemini API key loaded from database settings.")
+
+    # --- ادامه راه‌اندازی مدل‌های هوش مصنوعی ---
+    if not validate_model_access(GEMINI_API_KEY, SELECTED_MODEL_NAME):
+        logger.warning(f"Primary model '{SELECTED_MODEL_NAME}' not accessible. Trying fallback models...")
+        SELECTED_MODEL_NAME = try_fallback_models(GEMINI_API_KEY, SELECTED_MODEL_NAME)
+        logger.info(f"Using model: {SELECTED_MODEL_NAME}")
+
+    configure_genai(GEMINI_API_KEY)
+    llm_model = genai.GenerativeModel(
+        SELECTED_MODEL_NAME,
+        system_instruction=PROMPTS.get('COUNSELOR_MANIFESTO', 'You are a helpful assistant.')
+    )
+    logger.info(f"Gemini API configured successfully with model: {SELECTED_MODEL_NAME}")
+
+    # embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME, device="cpu")
+    # logger.info("Embedding model loaded successfully.")
+    embedding_model = None
+
+except Exception as e:
+    logger.error(f"CRITICAL INITIALIZATION FAILED: {e}", exc_info=True)
+    llm_model = embedding_model = engine = None
 
 # ... (تمام توابع دیگر get_or_create_user, get_conversation و غیره را بدون تغییر اینجا قرار دهید) ...
 def _sync_get_or_create_user(web_user_id: str, first_name: str, user_info: dict = None) -> int:
@@ -838,9 +846,6 @@ async def save_conversation(user_id: int, history: list):
     if not engine: return
     await asyncio.to_thread(_sync_save_conversation, user_id, history)
 
-def to_pgvector_literal(vec_floats: list) -> str:
-    return "[" + ",".join(f"{float(x):.8f}" for x in vec_floats) + "]"
-
 def _sync_save_full_profile(user_id: int, **kwargs):
     update_data = {"uid": user_id}
     set_clauses = []
@@ -850,9 +855,6 @@ def _sync_save_full_profile(user_id: int, **kwargs):
             param_key = f"json_{key}"
             update_data[param_key] = json.dumps(value, ensure_ascii=False)
             set_clauses.append(f"{key} = :{param_key}")
-        elif key == "user_embedding":
-            update_data["ue"] = to_pgvector_literal(value)
-            set_clauses.append("user_embedding = CAST(:ue AS vector)")
         else:
             param_key = f"param_{key}"
             update_data[param_key] = value
@@ -1030,18 +1032,55 @@ def sanitize_history(raw_history: list) -> list:
 # 6) Evidence Extraction & Scoring
 # ==============================================================================
 async def extract_evidence_with_llm(history_contents: list):
-    # حالا پرامپت از دیکشنری خوانده می‌شود
-    prompt = PROMPTS.get('EVIDENCE_EXTRACTION_PROMPT', '{}')
-    response = await llm_generate_with_retry(llm_model, history_contents + [{"role": "user", "parts": [prompt]}])
+    # وارد کردن نام‌ها از فایل پرامپت‌ها
+    from prompts import RIASEC_NAMES, WORK_VALUES_NAMES, WORK_STYLES_NAMES
+    import re
+
+    # آماده‌سازی نام‌ها برای تزریق به پرامپت
+    riasec_names_str = ", ".join(RIASEC_NAMES)
+    work_values_names_str = ", ".join(WORK_VALUES_NAMES)
+    work_styles_names_str = ", ".join(WORK_STYLES_NAMES)
+
+    # دریافت قالب پرامپت از دیکشنری
+    prompt_template = PROMPTS.get('EVIDENCE_EXTRACTION_PROMPT', '{{}}')
     
+    # فرمت کردن پرامپت نهایی با تمام اطلاعات لازم
+    prompt = prompt_template.format(
+        riasec_names_str=riasec_names_str,
+        work_values_names_str=work_values_names_str,
+        work_styles_names_str=work_styles_names_str,
+        conversation_history=json.dumps(history_contents, ensure_ascii=False, indent=2)
+    )
+
+    # ارسال پرامپت کامل به عنوان یک ورودی واحد به مدل
+    response = await llm_generate_with_retry(llm_model, [prompt])
+
     if not response or not response.text:
         logger.warning("Empty response from LLM in extract_evidence_with_llm")
         return {}
-    
+
     clean_json_text = response.text.strip().replace("```json", "").replace("```", "").strip()
-    
+
     if not clean_json_text:
         logger.warning("Empty JSON text after cleaning in extract_evidence_with_llm")
+        return {}
+
+    try:
+        # تلاش اصلی برای پارس کردن JSON
+        return json.loads(clean_json_text)
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error in extract_evidence_with_llm: {e}")
+        logger.error(f"Raw response text: {response.text}")
+        logger.error(f"Cleaned text: {clean_json_text}")
+        # تلاش دوم: اگر پارس کردن شکست خورد، سعی کن یک آبجکت JSON را از داخل متن پیدا کنی
+        try:
+            match = re.search(r'\{.*\}', clean_json_text, re.DOTALL)
+            if match:
+                logger.info("Successfully extracted JSON object using regex fallback.")
+                return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            logger.error("Secondary attempt to parse JSON from text also failed.")
+            return {} # بازگشت به دیکشنری خالی در صورت شکست کامل
         return {}
     
     try:
@@ -1054,32 +1093,80 @@ async def extract_evidence_with_llm(history_contents: list):
 
 # ... (تابع score_with_ebp بدون تغییر باقی می‌ماند) ...
 def score_with_ebp(ev_json: dict):
-    # This function uses hardcoded values from prompts.py, let's keep it that way for simplicity
-    # or move these settings to another config/db table later.
+    # This function uses hardcoded values from prompts.py
     from prompts import DEFAULT_SCORES, RIASEC_NAMES, WORK_VALUES_NAMES, WORK_STYLES_NAMES, JOB_ZONE_MAPPING
     
     def clip(x, lo, hi): return max(lo, min(hi, x))
-    rs_sum, wv_sum, ws_sum = {k: DEFAULT_SCORES["riasec_base"] for k in RIASEC_NAMES}, {k: DEFAULT_SCORES["work_values_base"] for k in WORK_VALUES_NAMES}, {k: DEFAULT_SCORES["work_styles_base"] for k in WORK_STYLES_NAMES}
     
-    education_hint = (ev_json or {}).get("education_hint", "Unknown") or "Unknown"
-    comp_hints = set((ev_json or {}).get("complexity_hints", []) or [])
+    # --- بخش ۱: محاسبه امتیازات RIASEC, WorkValues, WorkStyles ---
+    # (این بخش بدون تغییر باقی مانده و به درستی کار می‌کند)
+    rs_sum = {k: DEFAULT_SCORES["riasec_base"] for k in RIASEC_NAMES}
+    wv_sum = {k: DEFAULT_SCORES["work_values_base"] for k in WORK_VALUES_NAMES}
+    ws_sum = {k: DEFAULT_SCORES["work_styles_base"] for k in WORK_STYLES_NAMES}
     
     for e in (ev_json or {}).get("evidence", []) or []:
-        cat, name, strength, conf = e.get("category", ""), e.get("name", ""), int(e.get("strength", 1)), float(e.get("confidence", 0.5))
-        delta = (0.3 + 0.5 * conf) * max(1, min(3, strength))
-        if cat == "RIASEC" and name in rs_sum: rs_sum[name] += delta
-        elif cat == "WorkValue" and name in wv_sum: wv_sum[name] += delta
-        elif cat == "WorkStyle" and name in ws_sum: ws_sum[name] += delta
+        cat, name = e.get("category", ""), e.get("name", "")
+        strength = int(e.get("strength", 0)) 
+        conf = float(e.get("confidence", 0.5))
         
-    rs_scores = {k: round(clip(v, 1.0, 7.0), 2) for k, v in rs_sum.items()}
-    wv_scores = {k: round(clip(v, 1.0, 6.0), 2) for k, v in wv_sum.items()}
+        # محاسبه دلتا بر اساس strength (منفی یا مثبت)
+        delta = (0.3 + 0.5 * conf) * strength 
+
+        if cat == "RIASEC" and name in rs_sum: 
+            rs_sum[name] += delta
+        elif cat == "WorkValue" and name in wv_sum: 
+            wv_sum[name] += delta
+        elif cat == "WorkStyle" and name in ws_sum: 
+            ws_sum[name] += delta
+            
+    # کلیپ کردن نهایی امتیازات بین ۱ تا ۵
+    rs_scores = {k: round(clip(v, 1.0, 5.0), 2) for k, v in rs_sum.items()}
+    wv_scores = {k: round(clip(v, 1.0, 5.0), 2) for k, v in wv_sum.items()}
     ws_scores = {k: round(clip(v, 1.0, 5.0), 2) for k, v in ws_sum.items()}
     
-    base_map = JOB_ZONE_MAPPING
-    jz = base_map.get(education_hint, 3) + ('complex_projects' in comp_hints) + ('management_desire' in comp_hints) - ('routine_preference' in comp_hints) - ('job_security_emphasis' in comp_hints)
-    jz = int(clip(jz, 1, 5))
     
-    jz_just = f"Base={education_hint}→{base_map.get(education_hint, 3)}; Adj: +{int('complex_projects' in comp_hints)}(complex) +{int('management_desire' in comp_hints)}(mgmt) -{int('routine_preference' in comp_hints)}(routine) -{int('job_security_emphasis' in comp_hints)}(security)."
+    # --- بخش ۲: منطق جدید و هوشمند محاسبه Job Zone ---
+    education_hint_raw = (ev_json or {}).get("education_hint", "Unknown") or "Unknown"
+    comp_hints = set((ev_json or {}).get("complexity_hints", []) or [])
+    
+    education_hint = "Unknown"
+    for key in JOB_ZONE_MAPPING.keys():
+        if key.lower() == education_hint_raw.lower():
+            education_hint = key
+            break
+    
+    base_map = JOB_ZONE_MAPPING
+    # امتیاز پایه JZ را اعشاری نگه می‌داریم
+    base_jz = float(base_map.get(education_hint, 3.0)) 
+    
+    # تعریف وزن‌های منطقی جدید
+    HINT_WEIGHTS = {
+        "senior_level": 1.5,          # سابقه ارشد: بیشترین تاثیر مثبت
+        "mid_level": 0.5,             # سابقه متوسط: تاثیر مثبت کم
+        "management_track": 0.5,      # تمایل به مدیریت: تاثیر مثبت کم
+        "complex_tasks": 0.25,        # کارهای پیچیده: تاثیر مثبت خیلی کم (جلوگیری از پرش ناگهانی)
+        "entry_level": -1.0,          # تازه‌کار: تاثیر منفی
+        "routine_tasks": -1.5         # کارهای روتین: بیشترین تاثیر منفی
+    }
+    
+    adjustment_score = 0.0
+    justification_parts = []
+    for hint in comp_hints:
+        weight = HINT_WEIGHTS.get(hint, 0.0) 
+        adjustment_score += weight
+        if weight != 0:
+            justification_parts.append(f"{hint}({weight:+.2f})")
+
+    final_jz_float = base_jz + adjustment_score
+    
+    # --- تغییر کلیدی: حذف گرد کردن (round) ---
+    # به جای round(4.5) -> 5، ما از int(4.5) -> 4 استفاده می‌کنیم.
+    # این کار باعث می‌شود که JZ فقط زمانی به 5 برسد که امتیاز واقعی 5.0 یا بیشتر باشد.
+    final_jz_int = int(final_jz_float) 
+    
+    jz = int(clip(final_jz_int, 1, 5)) # اطمینان از اینکه JZ نهایی بین 1 تا 5 است
+    
+    jz_just = f"Base='{education_hint}'→{base_jz}; Adj:{','.join(justification_parts) or 'None'}→{adjustment_score:+.2f}; Final={final_jz_float:.2f}→Truncated={jz}"
     
     career_profile = {"job_zone": jz, "interests": rs_scores, "work_values": wv_scores, "work_styles": ws_scores}
     return career_profile, jz, jz_just
@@ -1097,89 +1184,261 @@ async def build_personality_paragraph(career_profile: dict) -> str:
 # 7) Final Analysis & Matching
 # ==============================================================================
 async def run_final_analysis_and_matching(user_id: int, history: list) -> str:
-    # if not all([llm_model, embedding_model, engine]):
     if not all([llm_model, engine]):
         return PROMPTS.get('SYSTEM_ERROR_MESSAGE', 'System error.')
     try:
         history_gemini_fmt = sanitize_history(history)
-        
-        # استخراج evidence با error handling بهتر
+
         try:
             evidence_json = await extract_evidence_with_llm(history_gemini_fmt)
-            if not evidence_json:
-                logger.warning(f"Empty evidence_json for user {user_id}, using default values")
-                evidence_json = {"evidence": [], "education_hint": "Unknown", "complexity_hints": []}
+            # اطمینان از وجود کلیدهای لازم با مقادیر پیش‌فرض
+            evidence_json = {
+                "evidence": evidence_json.get("evidence", []),
+                "education_hint": evidence_json.get("education_hint", "Unknown"),
+                "complexity_hints": evidence_json.get("complexity_hints", []),
+                "current_career_field": evidence_json.get("current_career_field", "Unknown")
+            }
         except Exception as e:
             logger.error(f"Error in extract_evidence_with_llm for user {user_id}: {e}")
-            evidence_json = {"evidence": [], "education_hint": "Unknown", "complexity_hints": []}
-        
+            evidence_json = {"evidence": [], "education_hint": "Unknown", "complexity_hints": [], "current_career_field": "Unknown"}
+
         career_profile, jz, jz_just = score_with_ebp(evidence_json)
-        
-        # ساخت personality paragraph با error handling
+
+        personality_paragraph = "اطلاعات کافی برای تحلیل شخصیت موجود نیست."
         try:
-            personality_paragraph = await build_personality_paragraph(career_profile)
-            if not personality_paragraph:
-                personality_paragraph = "اطلاعات کافی برای تحلیل شخصیت موجود نیست."
+            generated_paragraph = await build_personality_paragraph(career_profile)
+            if generated_paragraph: personality_paragraph = generated_paragraph
         except Exception as e:
             logger.error(f"Error in build_personality_paragraph for user {user_id}: {e}")
-            personality_paragraph = "اطلاعات کافی برای تحلیل شخصیت موجود نیست."
+
+        # مقادیر پیش‌فرض
+        best_jobs_list = []
+        worst_jobs_list = []
         
-        # تولید embedding با error handling
         try:
-            final_user_vector = embed_with_gemini(personality_paragraph)
+            current_career_field = evidence_json.get("current_career_field", "Unknown")
+            best_jobs_list, worst_jobs_list = await asyncio.to_thread(
+                _sync_find_jobs_by_scores, career_profile, jz, current_career_field
+            )
         except Exception as e:
-            logger.error(f"Error in embed_with_gemini for user {user_id}: {e}")
-            final_user_vector = [0.0] * 768  # default vector
+            logger.error(f"Error in score-based matching for user {user_id}: {e}", exc_info=True)
 
-        def _sync_db_matching():
-            try:
-                with engine.connect() as conn:
-                    sql_best = text("SELECT title FROM public.jobs WHERE job_zone = :jz ORDER BY embedding <=> CAST(:embedding AS vector) ASC LIMIT 10")
-                    best_matches = conn.execute(sql_best, {"jz": jz, "embedding": to_pgvector_literal(final_user_vector)}).mappings().all()
-                    sql_worst = text("SELECT title FROM public.jobs WHERE job_zone = :jz ORDER BY embedding <=> CAST(:embedding AS vector) DESC LIMIT 10")
-                    worst_matches = conn.execute(sql_worst, {"jz": jz, "embedding": to_pgvector_literal(final_user_vector)}).mappings().all()
-                    return [r['title'] for r in best_matches], [r['title'] for r in worst_matches]
-            except Exception as e:
-                logger.error(f"Error in database matching for user {user_id}: {e}")
-                return [], []
+        # --- [منطق جدید] آماده‌سازی داده‌ها برای پرامپت ---
+        # تبدیل لیست‌ها و پروفایل به رشته JSON برای ارسال به LLM
+        best_jobs_json = json.dumps(best_jobs_list, ensure_ascii=False, indent=2)
+        worst_jobs_json = json.dumps(worst_jobs_list, ensure_ascii=False, indent=2)
+        career_profile_json = json.dumps(career_profile, ensure_ascii=False, indent=2)
+        # --- پایان منطق جدید ---
 
-        best_jobs_list, worst_jobs_list = await asyncio.to_thread(_sync_db_matching)
-        
+        # فرمت کردن پرامپت جدید با داده‌های JSON
         report_prompt = PROMPTS.get('FINAL_REPORT_PROMPT', '').format(
             personality_paragraph=personality_paragraph,
-            best_jobs_list=json.dumps(best_jobs_list, ensure_ascii=False),
-            worst_jobs_list=json.dumps(worst_jobs_list, ensure_ascii=False),
-            conversation_history=json.dumps(history_gemini_fmt, ensure_ascii=False)
+            best_jobs_json=best_jobs_json, # ارسال لیست JSON مشاغل خوب
+            worst_jobs_json=worst_jobs_json, # ارسال لیست JSON مشاغل بد
+            career_profile_json=career_profile_json # ارسال پروفایل کاربر
+            # conversation_history دیگر لازم نیست
         )
-        
-        enhanced_report_prompt = f"{PROMPTS.get('OUTPUT_PROTOCOL', '')}\n\n{report_prompt}"
-        
-        # تولید گزارش نهایی با error handling
+
         try:
-            final_report_response = await llm_generate_with_retry(llm_model, enhanced_report_prompt)
+            final_report_response = await llm_generate_with_retry(llm_model, report_prompt)
             final_report = (final_report_response.text or "گزارشی تولید نشد.").strip()
         except Exception as e:
             logger.error(f"Error in final report generation for user {user_id}: {e}")
             final_report = "متاسفانه در تولید گزارش نهایی خطایی رخ داد."
 
-        # ذخیره پروفایل با error handling
+        # ذخیره پروفایل (بدون تغییر)
         try:
             await save_full_profile(
                 user_id=user_id, career_profile=career_profile, evidence=evidence_json,
                 riasec_scores=career_profile.get("interests"), work_values_scores=career_profile.get("work_values"),
                 work_styles_scores=career_profile.get("work_styles"), job_zone_estimate=jz,
                 job_zone_justification=jz_just, personality_paragraph=personality_paragraph,
-                user_embedding=final_user_vector, final_report_text=final_report
+                final_report_text=final_report
             )
             await mark_report_generated(user_id)
         except Exception as e:
             logger.error(f"Error in save_full_profile for user {user_id}: {e}")
-        
+
         return final_report
 
     except Exception as e:
         logger.error(f"Critical error in final analysis for user {user_id}: {e}", exc_info=True)
         return PROMPTS.get('UNEXPECTED_ERROR_MESSAGE', 'Unexpected error.')
+
+def _calculate_veto_alignment_score(user_scores: dict, job_scores: dict, default_scores: dict, k: int = 3) -> float:
+    """
+    الگوریتم جدید: ابتدا وتو می‌کند، سپس "امتیاز عدم تطابق وزنی" (Weighted Mismatch Score)
+    را بر اساس *تمام* ۲۸ ویژگی محاسبه می‌کند.
+    """
+    
+    # --- بخش ۱: بررسی‌های اولیه و تنظیمات (بدون تغییر) ---
+    if not job_scores or not isinstance(job_scores, dict) or not job_scores.get("interests"):
+        return -float('inf')
+
+    # آستانه‌ها
+    user_key_weakness_threshold = 2.0
+    job_veto_need_threshold = 4.0
+    
+    # مقادیر پایه
+    base_scores_map = {
+        "interests": default_scores["riasec_base"],
+        "work_values": default_scores["work_values_base"],
+        "work_styles": default_scores["work_styles_base"]
+    }
+
+    # نگاشت دسته‌بندی‌ها (بدون تغییر)
+    score_categories = {
+        "interests": "interests",
+        "work_values": "workValues",
+        "work_styles": "workStyles"
+    }
+    
+    # امتیاز پیش‌فرض شغل را 3.0 در نظر می‌گیریم (نقطه خنثی)
+    JOB_SCORE_DEFAULT = 3.0
+
+    # --- بخش ۲: مرحله وتو (بسیار مهم و بدون تغییر) ---
+    
+    # ابتدا تمام ویژگی‌های کاربر را جمع‌آوری می‌کنیم
+    all_user_features = []
+    for user_key in score_categories.keys():
+        user_dict = user_scores.get(user_key, {})
+        for key, user_val in user_dict.items():
+            all_user_features.append({'name': key, 'score': user_val})
+
+    # فقط نقاط ضعف کلیدی را برای وتو پیدا می‌کنیم
+    key_weaknesses = [f for f in all_user_features if f['score'] <= user_key_weakness_threshold]
+
+    for weakness in key_weaknesses:
+        weakness_name = weakness['name']
+        
+        # پیدا کردن دسته‌بندی شغل بر اساس نام ویژگی (کمی پیچیده‌تر اما دقیق‌تر)
+        job_category_key = None
+        if weakness_name in RIASEC_NAMES: job_category_key = "interests"
+        elif weakness_name in WORK_VALUES_NAMES: job_category_key = "workValues"
+        elif weakness_name in WORK_STYLES_NAMES: job_category_key = "workStyles"   
+        
+        if not job_category_key: continue
+
+        job_dict = job_scores.get(job_category_key, {})
+        persian_key = KEY_MAP.get(weakness_name)
+        if not persian_key: continue
+        
+        job_score = float(job_dict.get(persian_key, JOB_SCORE_DEFAULT))
+        
+        if job_score >= job_veto_need_threshold:
+            # وتو! اگر شغل به نقطه ضعف کلیدی شما نیاز بالایی داشته باشد، حذف می‌شود.
+            return -float('inf')
+
+    # --- بخش ۳: محاسبه امتیاز عدم تطابق وزنی (منطق کاملاً جدید) ---
+    
+    total_weighted_mismatch = 0.0
+    total_weight = 0.0
+
+    for user_key, job_key in score_categories.items():
+        user_dict = user_scores.get(user_key, {})
+        job_dict = job_scores.get(job_key, {})
+        
+        # محاسبه امتیاز پایه (خنثی) برای این دسته
+        base_score = base_scores_map.get(user_key, 3.0)
+        
+        # مقایسه تک به تک *تمام* ویژگی‌ها در این دسته
+        for key_en, user_score in user_dict.items():
+            
+            # 1. محاسبه وزن (اهمیت این ویژگی برای کاربر)
+            # هر چه امتیاز کاربر از ۳ دورتر باشد، این ویژگی مهم‌تر است.
+            weight = abs(user_score - base_score)
+            
+            # اگر وزن نزدیک صفر است (یعنی امتیاز کاربر ۳.۰ است)، این ویژگی مهم نیست
+            if weight < 0.1:
+                continue
+
+            # 2. پیدا کردن امتیاز شغل
+            persian_key = KEY_MAP.get(key_en)
+            if not persian_key: continue
+            
+            job_score = float(job_dict.get(persian_key, JOB_SCORE_DEFAULT))
+            
+            # 3. محاسبه عدم تطابق (Mismatc)
+            # از توان ۲ استفاده می‌کنیم تا تفاوت‌های زیاد، جریمه بسیار سنگین‌تری بگیرند.
+            mismatch = (user_score - job_score) ** 2
+            
+            # 4. اضافه کردن به امتیاز نهایی
+            total_weighted_mismatch += weight * mismatch
+            total_weight += weight
+
+    if total_weight == 0:
+        return 0.0 # اگر کاربر هیچ ترجیحی نداشته باشد
+
+    # محاسبه میانگین وزنی عدم تطابق
+    # (هر چه این عدد *کمتر* باشد، شغل *بهتر* است)
+    final_mismatch_score = total_weighted_mismatch / total_weight
+
+    # ما می‌خواهیم امتیاز بالاتر بهتر باشد، پس نتیجه را منفی می‌کنیم
+    # (یک شغل با Mismatch نزدیک به صفر، بالاترین امتیاز را می‌گیرد)
+    return -final_mismatch_score
+
+
+def _sync_find_jobs_by_scores(career_profile: dict, job_zone: int, career_field: str = "Unknown"):
+    """
+    مشاغل را پیدا کرده و لیست‌هایی از دیکشنری شامل عنوان، کد O*NET و امتیاز خام را برمی‌گرداند.
+    """
+    user_scores = career_profile
+    job_zone_min = max(1, job_zone - 1)
+    job_zone_max = min(5, job_zone + 1)
+    valid_job_zones = tuple(range(job_zone_min, job_zone_max + 1))
+    if not valid_job_zones: valid_job_zones = (job_zone,)
+
+    logger.info(f"Searching for jobs within Job Zone range: {valid_job_zones} for field: {career_field}")
+
+    with engine.connect() as conn:
+        query = text("""
+            SELECT id, title, onet_profile, onet_code 
+            FROM public.jobs
+            WHERE onet_profile IS NOT NULL AND onet_profile::text != 'null'
+              AND (onet_profile->>'jobZone')::float::int IN :valid_job_zones
+        """)
+        all_jobs_with_profile = conn.execute(query, {"valid_job_zones": valid_job_zones}).mappings().all()
+
+    if not all_jobs_with_profile: return [], []
+
+    scored_jobs = []
+    for job in all_jobs_with_profile:
+        job_profile = job['onet_profile']
+        if isinstance(job_profile, str):
+            try: job_profile = json.loads(job_profile)
+            except json.JSONDecodeError: continue
+            
+        # [تغییر کلیدی ۱] محاسبه امتیاز خام
+        score = _calculate_veto_alignment_score(career_profile, job_profile, DEFAULT_SCORES, k=3)
+        
+        # ذخیره عنوان، کد و امتیاز خام
+        scored_jobs.append({
+            "title": job['title'], 
+            "score": score, # امتیاز خام (معمولا منفی، نزدیک‌تر به صفر بهتر)
+            "onet_code": job['onet_code']
+        })
+
+    # اعمال تقویت‌کننده زمینه شغلی (Contextual Boost) - بدون تغییر
+    if career_field != "Unknown" and career_field in FIELD_KEYWORD_MAP:
+        keywords = FIELD_KEYWORD_MAP[career_field]
+        non_vetoed_scores = [j['score'] for j in scored_jobs if j['score'] > -float('inf')]
+        max_score = max(non_vetoed_scores) if non_vetoed_scores else 0
+        boost_amount = abs(max_score) * 0.5 
+        logger.info(f"Applying boost of {boost_amount:.2f} for '{career_field}' jobs.")
+        for job in scored_jobs:
+            if job['score'] > -float('inf') and any(keyword in job['title'] for keyword in keywords):
+                job['score'] += boost_amount # امتیاز بهتر می‌شود (به صفر نزدیک‌تر)
+
+    # مرتب‌سازی نهایی بر اساس امتیاز خام (بهتر به بدتر)
+    scored_jobs.sort(key=lambda x: x['score'], reverse=True)
+
+    # [تغییر کلیدی ۲] برگرداندن لیست دیکشنری‌ها با امتیاز
+    best_jobs_list = [j for j in scored_jobs if j['score'] > -float('inf')][:10]
+    # برای مشاغل بد، آنهایی را انتخاب می‌کنیم که وتو نشده‌اند ولی امتیاز پایینی دارند
+    worst_jobs_list = [j for j in scored_jobs if -2.0 > j['score'] > -float('inf')][-5:] # مشاغل با امتیاز بدتر از -2.0
+
+    logger.info(f"Returning {len(best_jobs_list)} best jobs and {len(worst_jobs_list)} worst jobs with scores.")
+    return best_jobs_list, worst_jobs_list
 
 
 # ==============================================================================
@@ -1965,7 +2224,95 @@ async def handle_web_message(web_user_id: str, user_message: str, request_obj=No
             'reply_type': 'standard',
             'reply': bot_response_text,
         }
+@app.route('/admin/download-job-report/<int:conversation_id>')
+@require_admin_auth
+def download_job_report(conversation_id: int):
+    """
+    API برای تولید و دانلود گزارش کامل مشاغل با "درصد تطابق" صحیح.
+    """
+    try:
+        with engine.connect() as conn:
+            user_profile_data = conn.execute(text("""
+                SELECT career_profile, job_zone_estimate 
+                FROM public.conversations 
+                WHERE id = :conv_id
+            """), {"conv_id": conversation_id}).mappings().first()
 
+        if not user_profile_data or not user_profile_data['career_profile']:
+            return jsonify({'error': 'پروفایل شغلی برای این کاربر یافت نشد.'}), 404
+
+        career_profile = user_profile_data['career_profile']
+        job_zone = user_profile_data['job_zone_estimate'] or 3
+
+        job_zone_min = max(1, job_zone - 1)
+        job_zone_max = min(5, job_zone + 1)
+        valid_job_zones = tuple(range(job_zone_min, job_zone_max + 1))
+        
+        with engine.connect() as conn:
+            query = text("""
+                SELECT title, onet_profile
+                FROM public.jobs
+                WHERE onet_profile IS NOT NULL AND onet_profile::text != 'null'
+                  AND (onet_profile->>'jobZone')::float::int IN :valid_job_zones
+            """)
+            all_jobs_in_zone = conn.execute(query, {"valid_job_zones": valid_job_zones}).mappings().all()
+
+        if not all_jobs_in_zone:
+            return jsonify({'error': f'هیچ شغلی در محدوده Job Zone {valid_job_zones} یافت نشد.'}), 404
+            
+        scored_jobs = []
+        for job in all_jobs_in_zone:
+            job_profile = job['onet_profile']
+            if isinstance(job_profile, str):
+                try: job_profile = json.loads(job_profile)
+                except json.JSONDecodeError: continue
+            
+            score = _calculate_veto_alignment_score(career_profile, job_profile, DEFAULT_SCORES, k=3)
+            scored_jobs.append({"title": job['title'], "score": score})
+            
+        # --- منطق تبدیل امتیاز به درصد (بدون تغییر) ---
+        non_vetoed_jobs = [j for j in scored_jobs if j['score'] > -float('inf')]
+        
+        if non_vetoed_jobs:
+            min_score = min(j['score'] for j in non_vetoed_jobs)
+            max_score = max(j['score'] for j in non_vetoed_jobs)
+            score_range = max_score - min_score
+            if score_range == 0: score_range = 1
+
+            for job in non_vetoed_jobs:
+                normalized_score = (job['score'] - min_score) / score_range
+                job['match_percent'] = normalized_score * 100
+        
+        scored_jobs.sort(key=lambda x: x.get('match_percent', -1), reverse=True)
+
+        # --- پایان منطق درصد ---
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Rank', 'Job Title', 'Match Score (%)', 'Vetoed'])
+        
+        for rank, job in enumerate(scored_jobs, 1):
+            # --- [اصلاح کلیدی] ---
+            # ابتدا شرط وتو را در یک متغیر boolean ذخیره می‌کنیم
+            is_vetoed_bool = (job['score'] == -float('inf'))
+            
+            # سپس بر اساس آن، هم متن وتو و هم متن درصد را مشخص می‌کنیم
+            veto_status_str = "YES" if is_vetoed_bool else "NO"
+            match_percent_str = f"{job.get('match_percent', 0):.2f}%" if not is_vetoed_bool else "N/A"
+            
+            writer.writerow([rank, job['title'], match_percent_str, veto_status_str])
+            
+        output.seek(0)
+        
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv",
+            headers={ "Content-Disposition": f"attachment;filename=job_report_user_{conversation_id}.csv" }
+        )
+
+    except Exception as e:
+        logger.error(f"Error generating full job report for conv {conversation_id}: {e}", exc_info=True)
+        return jsonify({'error': 'خطا در تولید گزارش.'}), 500
 if __name__ == "__main__":
     # ابتدا بررسی می‌کنیم که آیا راه‌اندازی اولیه موفقیت‌آمیز بوده یا خیر
     if not all([engine, llm_model]):

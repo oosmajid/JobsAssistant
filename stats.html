@@ -329,7 +329,10 @@
                 loadingEl.style.display = 'none';
             }
         }
-        
+        function downloadFullReport(conversationId) {
+    // این تابع با فراخوانی API جدید، باعث شروع دانلود فایل می‌شود
+            window.location.href = `/admin/download-job-report/${conversationId}`;
+        }
         async function loadMoreChats() {
             if (!hasMoreData) return;
             
@@ -428,38 +431,48 @@
                     
                     // دکمه پروفایل شغلی
                     let profileButton = '';
-                    if (chat.career_profile) {
-                        profileButton = `<button class="profile-btn" onclick="showCareerProfile(${chat.conversation_id}, ${JSON.stringify(chat.career_profile).replace(/"/g, '&quot;')})">👤 پروفایل</button>`;
-                    } else {
-                        profileButton = '<span style="color: #6c757d;">-</span>';
-                    }
-                    
-                    row.innerHTML = `
-                        <td style="font-family: monospace; font-size: 0.85em;">${chat.conversation_id}</td>
-                        <td style="font-family: monospace; font-size: 0.85em;">${chat.telegram_user_id}</td>
-                        <td>${chat.first_name}</td>
-                        <td>
-                            <div class="date-time">${createdDate}</div>
-                            <div class="date-time">${createdTime}</div>
-                        </td>
-                        <td>
-                            <div class="date-time">${updatedDate}</div>
-                            <div class="date-time">${updatedTime}</div>
-                        </td>
-                        <td>
-                            ${chat.report_generated ? `
-                                <div class="date-time">${reportDate}</div>
-                                <div class="date-time">${reportTime}</div>
-                            ` : '<span style="color: #6c757d;">تولید نشده</span>'}
-                        </td>
-                        <td>${shareStatus}</td>
-                        <td>
-                            <span class="view-count">${chat.view_count}</span>
-                        </td>
-                        <td>${shareLink}</td>
-                        <td>${profileButton}</td>
-                    `;
-                    tableBody.appendChild(row);
+                        if (chat.career_profile) {
+                            profileButton = `<button class="btn btn-sm btn-outline-info me-2" onclick="showCareerProfile(${chat.conversation_id}, ${JSON.stringify(chat.career_profile).replace(/"/g, '&quot;')})">👤 مشاهده پروفایل</button>`;
+                        }
+
+                        // دکمه جدید دانلود گزارش
+                        let downloadButton = '';
+                        if (chat.report_generated) {
+                            downloadButton = `<button class="btn btn-sm btn-outline-success" onclick="downloadFullReport(${chat.conversation_id})" title="دانلود گزارش کامل تمام مشاغل بررسی‌شده">
+                                                <i class="fas fa-download"></i> دانلود گزارش
+                                            </button>`;
+                        }
+
+                        row.innerHTML = `
+                            <td style="font-family: monospace; font-size: 0.85em;">${chat.conversation_id}</td>
+                            <td style="font-family: monospace; font-size: 0.85em;">${chat.telegram_user_id}</td>
+                            <td>${chat.first_name}</td>
+                            <td>
+                                <div class="date-time">${createdDate}</div>
+                                <div class="date-time">${createdTime}</div>
+                            </td>
+                            <td>
+                                <div class="date-time">${updatedDate}</div>
+                                <div class="date-time">${updatedTime}</div>
+                            </td>
+                            <td>
+                                ${chat.report_generated ? `
+                                    <div class="date-time">${reportDate}</div>
+                                    <div class="date-time">${reportTime}</div>
+                                ` : '<span style="color: #6c757d;">تولید نشده</span>'}
+                            </td>
+                            <td>${shareStatus}</td>
+                            <td>
+                                <span class="view-count">${chat.view_count}</span>
+                            </td>
+                            
+                            <td class="text-center">
+                                ${shareLink}
+                                ${profileButton}
+                                ${downloadButton}
+                            </td>
+                        `;
+                        tableBody.appendChild(row);
                 });
                 
                 // نمایش دکمه load more اگر داده‌های بیشتری وجود دارد

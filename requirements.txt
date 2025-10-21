@@ -8,12 +8,8 @@ psycopg2-binary==2.9.9
 
 # AI/ML Libraries
 google-generativeai>=0.7,<0.9
-sentence-transformers==3.0.1
 torch>=2.5,<2.9
 transformers==4.36.2
-
-# Vector Database Support
-pgvector==0.2.4
 
 # Data Processing
 numpy>=1.26,<2.0
