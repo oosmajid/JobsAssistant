@@ -30,6 +30,12 @@ from flask_cors import CORS
 from sqlalchemy import create_engine, text
 import google.generativeai as genai
 from google.api_core.client_options import ClientOptions
+import jwt # برای ساختن توکن
+import random
+from datetime import datetime, timedelta, timezone # زمان‌بندی OTP و توکن
+from kavenegar import KavenegarAPI # ارسال SMS
+from functools import wraps # برای دکوریتور احراز هویت
+from sqlalchemy.exc import IntegrityError # برای مدیریت خطاهای دیتابیس
 # تعریف نام‌های مورد نیاز برای سیستم امتیازدهی (که هنوز در برخی توابع استفاده می‌شود)
 
 KEY_MAP = {
@@ -103,6 +109,22 @@ DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME")
 DB_CONNECTION_STRING = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+# --- تنظیمات جدید برای لاگین ---
+KAVEHNEGAR_API_KEY = os.getenv("KAVEHNEGAR_API_KEY")
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "DEFAULT_FALLBACK_SECRET_KEY_CHANGE_ME")
+
+# نمونه‌سازی API کاوه‌نگار
+kaveh_api = None
+if KAVEHNEGAR_API_KEY and KAVEHNEGAR_API_KEY != "YOUR_KAVEHNEGAR_API_KEY_HERE":
+    try:
+        kaveh_api = KavenegarAPI(KAVEHNEGAR_API_KEY)
+        logger.info("Kavenegar API initialized successfully.")
+    except Exception as e:
+        logger.error(f"Failed to initialize Kavenegar API: {e}")
+else:
+    logger.warning("KAVEHNEGAR_API_KEY not set. SMS functionality will be disabled.")
+# --- پایان تنظیمات جدید ---
 
 # مدل‌های موجود از متغیرهای محیطی
 AVAILABLE_MODELS_STR = os.getenv("AVAILABLE_MODELS", "models/gemini-flash-latest,models/gemini-pro-latest,models/gemini-2.0-flash,models/gemini-2.0-flash-001")
@@ -266,6 +288,67 @@ ADMIN_LOGIN_TEMPLATE = '''
 </body>
 </html>
 '''
+
+# قالب HTML برای نمایش چت در پنل ادمین
+ADMIN_VIEW_CHAT_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مشاهده چت - ادمین</title>
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body { font-family: 'Vazirmatn', sans-serif; background-color: #f4f7f9; margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .header { background: #007bff; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
+        .header h1 { margin: 0; font-size: 1.5em; }
+        .chat-log { padding: 30px; }
+        .message { max-width: 80%; padding: 12px 18px; border-radius: 18px; line-height: 1.6; margin-bottom: 20px; word-wrap: break-word; }
+        .user-message { background-color: #007bff; color: white; border-bottom-right-radius: 5px; margin-left: auto; }
+        .model-message { background-color: #e9ecef; color: #333; border-bottom-left-radius: 5px; margin-right: auto; }
+        .message p { margin: 0 0 10px 0; } /* فاصله بین پاراگراف‌ها در markdown */
+        .message p:last-child { margin-bottom: 0; }
+        .message ul, .message ol { margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>مشاهده چت (Conversation ID: {{ conversation_id }})</h1>
+            <p style="margin: 5px 0 0 0;">کاربر: {{ identifier }}</p>
+        </div>
+        <div class="chat-log" id="chat-log">
+                    </div>
+    </div>
+    <script>
+        const conversationHistory = {{ conversation_data|tojson }};
+        const chatLog = document.getElementById('chat-log');
+        
+        marked.setOptions({ breaks: true, gfm: true });
+
+        conversationHistory.forEach(msg => {
+            const msgDiv = document.createElement('div');
+            msgDiv.classList.add('message');
+            msgDiv.classList.add(msg.role === 'user' ? 'user-message' : 'model-message');
+            
+            // parts می‌تواند آرایه باشد یا فقط متن
+            let textContent = '';
+            if (Array.isArray(msg.parts)) {
+                textContent = msg.parts.map(part => (typeof part === 'object' ? part.text : part)).join('\\n\\n');
+            } else if (msg.parts) {
+                textContent = msg.parts;
+            }
+
+            msgDiv.innerHTML = marked.parse(textContent);
+            chatLog.appendChild(msgDiv);
+        });
+    </script>
+</body>
+</html>
+'''
+
 
 def validate_model_access(api_key: str, model_name: str) -> bool:
     """بررسی می‌کند که آیا به مدل مشخص شده دسترسی وجود دارد یا خیر."""
@@ -734,128 +817,77 @@ except Exception as e:
     llm_model = embedding_model = engine = None
     generic_model = None # NEW: در صورت خطا، این را نیز None قرار دهید
 
-# ... (تمام توابع دیگر get_or_create_user, get_conversation و غیره را بدون تغییر اینجا قرار دهید) ...
-def _sync_get_or_create_user(web_user_id: str, first_name: str, user_info: dict = None) -> int:
+def _sync_get_conversation(user_id: int = None, anonymous_user_id: str = None) -> dict:
+    """
+    (نسخه اصلاح شده)
+    چت را بر اساس کاربر لاگین شده (user_id) یا کاربر ناشناس (anonymous_user_id) دریافت می‌کند.
+    اگر چتی وجود نداشت، آن را "با همان شناسه" می‌سازد.
+    """
+    if not engine:
+        return {"conversation_history": [], "career_profile": None, "id": None}
+        
     with engine.connect() as conn:
-        user_id = conn.execute(text("SELECT id FROM public.users WHERE telegram_user_id = :tid"), {"tid": web_user_id}).scalar_one_or_none()
+        query = None
+        params = {}
+        
+        # --- (اصلاح شد) منطق جستجو ---
+        if user_id:
+            query = text("SELECT id, conversation_history, career_profile FROM public.conversations WHERE user_id = :uid ORDER BY updated_at DESC LIMIT 1")
+            params = {"uid": user_id}
+        elif anonymous_user_id:
+            query = text("SELECT id, conversation_history, career_profile FROM public.conversations WHERE anonymous_user_id = :aid ORDER BY updated_at DESC LIMIT 1")
+            params = {"aid": anonymous_user_id}
+        else:
+            # این حالت نباید رخ دهد (چون /chat همیشه یک شناسه می‌سازد)
+            logger.warning("get_conversation called with no IDs. This shouldn't happen.")
+            return {"conversation_history": [], "career_profile": None, "id": None}
+
+        result = conn.execute(query, params).mappings().first()
+        
+        if result:
+            # اگر چت پیدا شد، آن را برگردان
+            return dict(result)
+        
+        # --- (اصلاح شد) منطق ساخت چت ---
+        # اگر چت پیدا نشد، "با همان شناسه" یکی بساز
         
         if user_id:
-            # کاربر موجود است - بروزرسانی اطلاعات
-            if user_info:
-                update_fields = []
-                update_params = {"uid": user_id, "tid": web_user_id}
-                
-                # فیلدهای قابل بروزرسانی
-                updatable_fields = [
-                    'ip_address', 'user_agent', 'browser_name', 'browser_version',
-                    'operating_system', 'device_type', 'country', 'city', 'timezone',
-                    'language', 'referrer', 'session_id', 'last_seen'
-                ]
-                
-                for field in updatable_fields:
-                    if field in user_info and user_info[field]:
-                        update_fields.append(f"{field} = :{field}")
-                        update_params[field] = user_info[field]
-                
-                if update_fields:
-                    update_fields.append("visit_count = visit_count + 1")
-                    update_fields.append("updated_at = NOW()")
-                    
-                    stmt = text(f"""
-                        UPDATE public.users 
-                        SET {', '.join(update_fields)}
-                        WHERE id = :uid
-                    """)
-                    conn.execute(stmt, update_params)
-                    conn.commit()
-            
-            return user_id
+            logger.info(f"No conversation found for user_id {user_id}. Creating new.")
+            stmt = text("INSERT INTO public.conversations (user_id, conversation_history) VALUES (:uid, '[]'::jsonb) RETURNING id")
+            result = conn.execute(stmt, {"uid": user_id}).mappings().first()
+            conn.commit()
+            return {"id": result['id'], "conversation_history": [], "career_profile": None}
         
-        # کاربر جدید - ایجاد رکورد جدید
-        if user_info is None:
-            user_info = {}
-        
-        # اضافه کردن اطلاعات جغرافیایی
-        if 'ip_address' in user_info:
-            location_info = get_location_info(user_info['ip_address'])
-            user_info.update(location_info)
-        
-        # تنظیم مقادیر پیش‌فرض
-        default_values = {
-            'first_name': first_name,
-            'visit_count': 1,
-            'created_at': datetime.now(),
-            'updated_at': datetime.now(),
-            'last_seen': datetime.now()
-        }
-        user_info.update(default_values)
-        
-        # ایجاد کوئری INSERT
-        fields = ['telegram_user_id']
-        values = [':telegram_user_id']
-        params = {'telegram_user_id': web_user_id}
-        
-        # اضافه کردن فیلدهای موجود در user_info
-        db_fields_mapping = {
-            'ip_address': 'ip_address',
-            'user_agent': 'user_agent', 
-            'browser_name': 'browser_name',
-            'browser_version': 'browser_version',
-            'operating_system': 'operating_system',
-            'device_type': 'device_type',
-            'country': 'country',
-            'city': 'city',
-            'timezone': 'timezone',
-            'language': 'language',
-            'referrer': 'referrer',
-            'session_id': 'session_id',
-            'first_name': 'first_name',
-            'visit_count': 'visit_count',
-            'created_at': 'created_at',
-            'updated_at': 'updated_at',
-            'last_seen': 'last_seen'
-        }
-        
-        for key, db_field in db_fields_mapping.items():
-            if key in user_info:
-                fields.append(db_field)
-                values.append(f':{key}')
-                params[key] = user_info[key]
-        
-        stmt = text(f"""
-            INSERT INTO public.users ({', '.join(fields)}) 
-            VALUES ({', '.join(values)}) 
-            RETURNING id
-        """)
-        
-        result = conn.execute(stmt, params)
-        conn.commit()
-        return result.scalar_one()
+        elif anonymous_user_id:
+            # (این باگ اصلی بود) حالا چت را با همان anonymous_id می‌سازیم
+            logger.info(f"No conversation found for anonymous_id {anonymous_user_id}. Creating new.")
+            stmt = text("INSERT INTO public.conversations (anonymous_user_id, conversation_history) VALUES (:aid, '[]'::jsonb) RETURNING id")
+            result = conn.execute(stmt, {"aid": anonymous_user_id}).mappings().first()
+            conn.commit()
+            # (مهم) حالا شناسه را هم برگردان
+            return {"id": result['id'], "conversation_history": [], "career_profile": None, "anonymous_user_id": anonymous_user_id}
 
-async def get_or_create_user(web_user_id: str, first_name: str = "WebUser", user_info: dict = None) -> int | None:
-    if not engine: return None
-    return await asyncio.to_thread(_sync_get_or_create_user, web_user_id, first_name, user_info)
+        return {"conversation_history": [], "career_profile": None, "id": None}
 
-def _sync_get_conversation(user_id: int) -> dict:
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT conversation_history, career_profile FROM public.conversations WHERE user_id = :uid"), {"uid": user_id}).mappings().first()
-        if result: return dict(result)
-        conn.execute(text("INSERT INTO public.conversations (user_id, conversation_history) VALUES (:uid, '[]'::jsonb)"), {"uid": user_id})
-        conn.commit()
-        return {"conversation_history": [], "career_profile": None}
-
-async def get_conversation(user_id: int) -> dict:
+async def get_conversation(user_id: int = None, anonymous_user_id: str = None) -> dict:
     if not engine: return {}
-    return await asyncio.to_thread(_sync_get_conversation, user_id)
+    return await asyncio.to_thread(_sync_get_conversation, user_id, anonymous_user_id)
 
-def _sync_save_conversation(user_id: int, history: list):
+def _sync_save_conversation(conversation_id: int, history: list):
+    """ چت را بر اساس ID یکتای چت (conversation_id) ذخیره می‌کند """
+    if not conversation_id:
+        logger.error("Attempted to save conversation with no conversation_id.")
+        return
     with engine.connect() as conn:
-        conn.execute(text("UPDATE public.conversations SET conversation_history = :hist, updated_at = NOW() WHERE user_id = :uid"), {"hist": json.dumps(history, ensure_ascii=False), "uid": user_id})
+        conn.execute(
+            text("UPDATE public.conversations SET conversation_history = :hist, updated_at = NOW() WHERE id = :cid"),
+            {"hist": json.dumps(history, ensure_ascii=False), "cid": conversation_id}
+        )
         conn.commit()
 
-async def save_conversation(user_id: int, history: list):
+async def save_conversation(conversation_id: int, history: list):
     if not engine: return
-    await asyncio.to_thread(_sync_save_conversation, user_id, history)
+    await asyncio.to_thread(_sync_save_conversation, conversation_id, history)
 
 def _sync_save_full_profile(user_id: int, **kwargs):
     update_data = {"uid": user_id}
@@ -1231,17 +1263,39 @@ def serve_shared_chat(share_id):
 
 @app.route('/share-chat', methods=['POST'])
 def share_chat():
-    """ایجاد لینک اشتراک‌گذاری برای چت"""
+    """ایجاد لینک اشتراک‌گذاری برای چت (نسخه 2 - سازگار با لاگین)"""
     try:
         data = request.json
-        user_id = data.get('user_id')
         conversation = data.get('conversation', [])
         career_profile = data.get('career_profile')
         
-        if not user_id or not conversation:
-            return jsonify({'error': 'User ID and conversation are required'}), 400
+        identifier_to_save = None
         
-        share_id = _sync_create_shared_chat(user_id, conversation, career_profile)
+        # ۱. تلاش برای خواندن کاربر لاگین شده از توکن
+        token_header = request.headers.get('Authorization')
+        if token_header:
+            try:
+                token = token_header.split(" ")[1]
+                payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=["HS256"])
+                # ستون original_user_id در shared_chats از نوع VARCHAR است
+                # پس user_id عددی را به رشته تبدیل می‌کنیم
+                identifier_to_save = str(payload['user_id'])
+                logger.info(f"Share request from logged-in user: {identifier_to_save}")
+            except Exception as e:
+                logger.warning(f"Invalid token in /share-chat, falling back to anonymous: {e}")
+        
+        # ۲. اگر توکن نبود، از شناسه کاربر مهمان استفاده کن
+        if not identifier_to_save:
+            identifier_to_save = data.get('anonymous_user_id')
+            if identifier_to_save:
+                logger.info(f"Share request from anonymous user: {identifier_to_save}")
+
+        
+        if not identifier_to_save or not conversation:
+            return jsonify({'error': 'شناسه کاربر و مکالمه الزامی است'}), 400
+        
+        # ۳. ایجاد لینک
+        share_id = _sync_create_shared_chat(identifier_to_save, conversation, career_profile)
         return jsonify({'share_id': share_id})
         
     except Exception as e:
@@ -1380,118 +1434,50 @@ def admin_recent_shared_chats():
 @app.route('/admin/all-chats')
 @require_admin_auth
 def admin_all_chats():
-    """دریافت لیست چت‌ها با pagination"""
+    """دریافت لیست چت‌ها با pagination (نسخه 2 - سازگار با لاگین)"""
     try:
-        # دریافت پارامترهای pagination
         offset = request.args.get('offset', 0, type=int)
         limit = request.args.get('limit', 50, type=int)
         
         with engine.connect() as conn:
-            # دریافت تعداد کل چت‌ها
-            total_count = conn.execute(text("""
-                SELECT COUNT(*) FROM public.conversations
-            """)).scalar_one()
+            total_count = conn.execute(text("SELECT COUNT(*) FROM public.conversations")).scalar_one()
             
-            # دریافت چت‌ها با pagination
             all_chats = conn.execute(text("""
                 SELECT 
                     c.id as conversation_id,
                     c.user_id,
+                    c.anonymous_user_id,
                     c.created_at,
                     c.updated_at,
                     c.report_generated,
                     c.career_profile,
-                    u.telegram_user_id,
-                    u.first_name,
-                    sc.share_id,
-                    sc.view_count,
-                    sc.last_viewed_at,
-                    sc.expires_at,
-                    CASE 
-                        WHEN sc.share_id IS NOT NULL AND sc.expires_at > NOW() THEN true 
-                        ELSE false 
-                    END as has_active_share,
-                    CASE 
-                        WHEN sc.share_id IS NOT NULL THEN true 
-                        ELSE false 
-                    END as has_share
+                    u.phone_number,
+                    u.first_name
                 FROM public.conversations c
                 LEFT JOIN public.users u ON c.user_id = u.id
-                LEFT JOIN public.shared_chats sc ON sc.original_user_id = u.telegram_user_id
                 ORDER BY c.updated_at DESC 
                 LIMIT :limit OFFSET :offset
             """), {"limit": limit, "offset": offset}).mappings().all()
             
-            # تبدیل به لیست دیکشنری
             chats_list = []
             for row in all_chats:
-                # اگر لینک اشتراکی وجود ندارد، یکی ایجاد می‌کنیم
-                share_url = None
-                share_id = row['share_id']
-                
-                if not share_id:
-                    # ایجاد لینک اشتراکی جدید
-                    try:
-                        # دریافت conversation_data
-                        conv_data = conn.execute(text("""
-                            SELECT conversation_history FROM public.conversations 
-                            WHERE id = :conv_id
-                        """), {"conv_id": row['conversation_id']}).scalar_one_or_none()
-                        
-                        if conv_data:
-                            # تبدیل به فرمت مناسب
-                            if isinstance(conv_data, str):
-                                try:
-                                    conversation_data = json.loads(conv_data)
-                                except json.JSONDecodeError:
-                                    conversation_data = []
-                            elif isinstance(conv_data, list):
-                                conversation_data = conv_data
-                            else:
-                                conversation_data = []
-                            
-                            # بررسی اینکه آیا conversation_data خالی نیست
-                            if conversation_data and len(conversation_data) > 0:
-                                # ایجاد لینک اشتراکی
-                                share_id = _sync_create_shared_chat(
-                                    row['telegram_user_id'], 
-                                    conversation_data
-                                )
-                                share_url = f"/shared/{share_id}"
-                            else:
-                                share_url = "چت خالی است"
-                        else:
-                            share_url = "چت خالی است"
-                    except Exception as e:
-                        logger.error(f"Error creating share link for chat {row['conversation_id']}: {e}")
-                        share_url = "خطا در ایجاد لینک"
-                else:
-                    share_url = f"/shared/{share_id}"
-                
                 # پردازش career_profile
                 career_profile = row['career_profile']
                 if isinstance(career_profile, str):
-                    try:
-                        career_profile = json.loads(career_profile)
-                    except json.JSONDecodeError:
-                        career_profile = None
+                    try: career_profile = json.loads(career_profile)
+                    except json.JSONDecodeError: career_profile = None
                 
                 chat_data = {
                     'conversation_id': row['conversation_id'],
                     'user_id': row['user_id'],
-                    'telegram_user_id': row['telegram_user_id'],
-                    'first_name': row['first_name'] or 'نامشخص',
+                    'anonymous_user_id': row['anonymous_user_id'],
+                    'identifier': row['phone_number'] if row['phone_number'] else (row['anonymous_user_id'] or 'N/A'),
+                    'first_name': row['first_name'] or ('مهمان' if row['anonymous_user_id'] else 'N/A'),
                     'created_at': row['created_at'].isoformat() if row['created_at'] else None,
                     'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None,
                     'report_generated': row['report_generated'].isoformat() if row['report_generated'] else None,
                     'career_profile': career_profile,
-                    'share_id': share_id,
-                    'view_count': row['view_count'] or 0,
-                    'last_viewed_at': row['last_viewed_at'].isoformat() if row['last_viewed_at'] else None,
-                    'expires_at': row['expires_at'].isoformat() if row['expires_at'] else None,
-                    'has_active_share': row['has_active_share'],
-                    'has_share': row['has_share'],
-                    'share_url': share_url
+                    # اطلاعات اشتراک‌گذاری به دلیل تغییر ساختار حذف شد
                 }
                 chats_list.append(chat_data)
             
@@ -1618,66 +1604,200 @@ def admin_refresh_models():
             'available_models': AVAILABLE_MODELS,
             'error': f'خطا در به‌روزرسانی لیست مدل‌ها: {str(e)}'
         }), 500
-async def handle_web_message(web_user_id: str, user_message: str, request_obj=None, conversation=None) -> dict:
-    user_info = None
-    if request_obj:
-        user_info = extract_user_info_from_request(request_obj)
-    
-    db_user_id = await get_or_create_user(web_user_id, "WebUser", user_info)
-    
-    if not db_user_id:
-        return {'reply_type': 'standard', 'reply': "خطا در دسترسی به اطلاعات کاربری شما."}
-
-    # --- این بخش حذف می‌شود ---
-    # FIX: بررسی ویژه برای درخواست‌های شبیه‌سازی ادمین
-    # if web_user_id.endswith('_persona_gen'):
-    #    ... (کل این بلاک if حذف شود)
-    # --- پایان فیکس ---
-
-    # اگر conversation از فرانت‌اند ارسال شده، از آن استفاده کن، در غیر این صورت از دیتابیس بخون
-    if conversation and len(conversation) > 0:
-        history_gemini_fmt = sanitize_history(conversation)
-    else:
-        convo_data = await get_conversation(db_user_id)
+async def handle_web_message(user_message: str, conversation_history: list, user_id: int = None, anonymous_user_id: str = None, conversation_id: int = None, is_post_login_trigger: bool = False) -> dict:
+    new_anonymous_user_id = None # برای برگرداندن شناسه جدید در صورت ساخته شدن
+    # ۱. دریافت یا ساخت چت
+    if not conversation_history or not conversation_id:
+        convo_data = await get_conversation(user_id=user_id, anonymous_user_id=anonymous_user_id)
         history_gemini_fmt = sanitize_history(convo_data.get("conversation_history", []))
+        conversation_id = convo_data.get("id")
+        if 'anonymous_user_id' in convo_data:
+            anonymous_user_id = convo_data['anonymous_user_id']
+            new_anonymous_user_id = anonymous_user_id
+    else:
+        history_gemini_fmt = sanitize_history(conversation_history)
 
-    contents = history_gemini_fmt + [{"role": "user", "parts": [user_message]}]
+    if not conversation_id:
+        logger.error("CRITICAL: Could not find or create conversation_id.")
+        return {'reply_type': 'error', 'reply': "خطا در یافتن شناسه چت."}
+
+    # --- (منطق اصلاح شده) ---
+
+    # تابع کمکی برای بررسی آخرین پیام (پرامپت ۴.۳)
+    def is_last_model_message_confirmation(history):
+        """بررسی کند آخرین پیام مدل خلاصه تاییدی (۴.۳) است یا نه."""
+        if not history:
+            return False
+        last_bot = None
+        for m in reversed(history):
+            if m.get('role') == 'model':
+                last_bot = m
+                break
+        if not last_bot:
+            return False
+        last_text = "".join(last_bot['parts']).strip() if isinstance(last_bot['parts'], list) else str(last_bot.get('parts'))
+        # دقیق‌تر: شامل کلیدواژه تایید و تحلیل باشد
+        TRIGGER_PHRASES = ["تصویر درستی ازت پیدا کردم","آیا این تصویر رو تایید می‌کنی","بر اساس حرف‌هات، من آدمی رو می‌بینم که"]
+        return any(phrase in last_text for phrase in TRIGGER_PHRASES)
+
+    # ۱. بررسی اینکه آیا کاربر *همین الان* در حال پاسخ به خلاصه تایید است؟
+    is_replying_to_summary = is_last_model_message_confirmation(history_gemini_fmt)
+    is_logged_in = (user_id is not None)
+
+    # ۲. (حالت گیت لاگین) کاربر به خلاصه پاسخ داد، اما لاگین نیست
+    if is_replying_to_summary and not is_logged_in:
+        logger.info(f"Login required for anonymous user {anonymous_user_id}. User is confirming summary.")
+        
+        # (اصلاح قبلی) تاریخچه جدید را *با* پیام کاربر بساز
+        updated_db_history = history_gemini_fmt + [{"role": "user", "parts": [user_message]}]
+        # این تاریخچه را *همین الان* در دیتابیس ذخیره کن
+        await save_conversation(conversation_id, updated_db_history)
+
+        return {
+            'reply_type': 'login_required',
+            'login_gate': True,
+            'reply': "خیلی هم عالی! تحلیلت رو تایید کردی. 🚀\n\n**برای مشاهده پیشنهادهای شغلی و تحلیل نهایی، لطفاً وارد شو یا ثبت‌نام کن.**",
+            'conversation_history': updated_db_history, # <-- تاریخچه *آپدیت شده* را برگردان
+            'conversation_id': conversation_id,
+            'anonymous_user_id': anonymous_user_id,
+            'new_anonymous_user_id': new_anonymous_user_id
+        }
+
+    # ۳. (حالت ادامه پس از لاگین) کاربر به خلاصه پاسخ داد (یا پیام ذخیره شده‌اش رسید) و لاگین است
+    if is_replying_to_summary and is_logged_in:
+        logger.info("User has confirmed summary and is logged in. Getting job suggestions.")
+        
+        # --- FIX (حل مشکل توقف/Stall) ---
+        # تاریخچه (history_gemini_fmt) شامل پیام خلاصه ربات است.
+        # ما باید پیام کاربر (user_message) را به آن اضافه کنیم تا برای LLM ارسال شود.
+        contents = history_gemini_fmt + [{"role": "user", "parts": [user_message]}]
+        # --- End FIX ---
+
+        # و به LLM می‌فرستیم تا پیشنهادات شغلی (پرامپت ۴.۴) را بگیرد
+        try:
+            response_job = await llm_generate_with_retry(llm_model, contents)
+            job_response_text = (response_job.text or "نتوانستم پیشنهادات را تولید کنم").strip()
+        except Exception as e:
+            logger.error(f"LLM error after summary confirm: {e}", exc_info=True)
+            return {'reply_type': 'error', 'reply': 'خطا در تولید پیشنهادهای شغلی.'}
+        
+        # --- (اصلاح شده برای مشکل 1) ---
+        # اگر این یک تریگر مخفی پس از لاگین است، پیام "ادامه بده" را در تاریخچه ذخیره نکن.
+        if is_post_login_trigger:
+            updated_db_history = history_gemini_fmt + [{"role": "model", "parts": [job_response_text]}]
+            logger.info("Post-login trigger. Hiding user's 'continue' message from history.")
+        else:
+            updated_db_history = contents + [{"role": "model", "parts": [job_response_text]}]
+        # --- پایان اصلاح ---
+
+        await save_conversation(conversation_id, updated_db_history)
+        return {
+            'reply_type': 'standard',
+            'reply': job_response_text,
+            'conversation_history': updated_db_history,
+            'conversation_id': conversation_id,
+            'anonymous_user_id': anonymous_user_id,
+            **({'new_anonymous_user_id': new_anonymous_user_id} if new_anonymous_user_id else {})
+        }
+        
+    # ۴. (حالت مکالمه عادی)
+    try:
+        response = await llm_generate_with_retry(llm_model, history_gemini_fmt + [{"role": "user", "parts": [user_message]}])
+        bot_response_text = (response.text or "متوجه نشدم؛ می‌تونی کمی روشن‌تر توضیح بدی؟").strip()
+    except Exception as e:
+        logger.error(f"LLM Error in handle_web_message: {e}", exc_info=True)
+        return {'reply_type': 'error', 'reply': 'خطا در ارتباط با سرویس هوش مصنوعی.'}
     
-    # از مدل 'llm_model' (مدل مشاور) استفاده کنید
-    response = await llm_generate_with_retry(llm_model, contents)
-    bot_response_text = (response.text or "متوجه نشدم؛ می‌تونی کمی روشن‌تر توضیح بدی؟").strip()
+    # --- (اصلاح شده برای مشکل 1) ---
+    if is_post_login_trigger:
+        updated_db_history = history_gemini_fmt + [{"role": "model", "parts": [bot_response_text]}]
+        logger.info("Post-login trigger (normal chat). Hiding user's 'continue' message from history.")
+    else:
+        updated_db_history = history_gemini_fmt + [{"role": "user", "parts": [user_message]}] + [{"role": "model", "parts": [bot_response_text]}]
+    # --- پایان اصلاح ---
 
-    # --- منطق سیگنال حذف شد ---
-    # دیگر نیازی به چک کردن {"analysis_complete": true} نیست
-
-    # همیشه پاسخ استاندارد را ذخیره و ارسال کن
-    updated_db_history = contents + [{"role": "model", "parts": [bot_response_text]}]
-    await save_conversation(db_user_id, updated_db_history)
+    await save_conversation(conversation_id, updated_db_history)
     
-    return {
+    return_data = {
         'reply_type': 'standard',
         'reply': bot_response_text,
-        'conversation_history': updated_db_history # ارسال تاریخچه آپدیت شده به فرانت
+        'conversation_history': updated_db_history,
+        'conversation_id': conversation_id,
+        'anonymous_user_id': anonymous_user_id
     }
+    if new_anonymous_user_id:
+        return_data['new_anonymous_user_id'] = new_anonymous_user_id
+    return return_data
+
 @app.route('/chat', methods=['POST'])
 def chat():
     data = request.json
-    web_user_id = data.get('user_id')
     user_message = data.get('message', '').strip()
-    conversation = data.get('conversation', [])  # دریافت conversation از فرانت‌اند
+    if not user_message:
+        return jsonify({'error': 'Message is required'}), 400
 
-    if not web_user_id or not user_message:
-        return jsonify({'error': 'User ID and message are required'}), 400
+    # --- منطق جدید احراز هویت ---
+    user_id = None
+    anonymous_user_id = data.get('anonymous_user_id') # شناسه کاربر مهمان
+    conversation_history = data.get('conversation', []) # تاریخچه چت فعلی
+    
+    token = None
+    if 'Authorization' in request.headers:
+        try:
+            token = request.headers['Authorization'].split(" ")[1]
+            payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=["HS256"])
+            user_id = payload['user_id']
+            # اگر کاربر لاگین کرده، دیگر شناسه ناشناس مهم نیست
+            anonymous_user_id = None 
+            logger.info(f"Chat request from logged-in user: {user_id}")
+        except jwt.ExpiredSignatureError:
+            return jsonify({'reply_type': 'error', 'reply': 'Token منقضی شده. لطفاً دوباره لاگین کنید.', 'token_expired': True}), 401
+        except Exception as e:
+            logger.error(f"Invalid token: {e}")
+            # با توکن نامعتبر ادامه نده
+            return jsonify({'reply_type': 'error', 'reply': 'Token نامعتبر است.'}), 401
+    
+    if not user_id and not anonymous_user_id:
+        # اگر نه لاگین بود و نه شناسه ناشناس داشت، یک شناسه جدید می‌سازیم
+        anonymous_user_id = "web_user_" + str(uuid.uuid4())
+        logger.info(f"Chat request from new anonymous user: {anonymous_user_id}")
+    elif not user_id:
+        logger.info(f"Chat request from anonymous user: {anonymous_user_id}")
+    # --- پایان منطق جدید ---
 
     if not llm_model:
         return jsonify({'reply': 'متاسفانه سرویس هوش مصنوعی در حال حاضر در دسترس نیست.'}), 503
 
     try:
-        response_data = asyncio.run(handle_web_message(web_user_id, user_message, request, conversation))
-        return jsonify(response_data)
+        # (جدید) conversation_id را از کلاینت بخوان
+        conversation_id = data.get('conversation_id') 
+
+        # --- (اصلاح شده برای مشکل 1) ---
+        # پرچم مخفی را بخوان که آیا این پیام "ادامه بده" است یا نه
+        is_post_login_trigger = data.get('is_post_login_trigger', False)
+
+        # آبجکت request را برای تابع handle_web_message ارسال می‌کنیم
+        response_data = asyncio.run(handle_web_message(
+            user_message=user_message,
+            conversation_history=conversation_history, # تاریخچه چت از فرانت
+            user_id=user_id, # ID عددی کاربر لاگین شده
+            anonymous_user_id=anonymous_user_id, # ID متنی کاربر مهمان
+            conversation_id=conversation_id, # <<< (این خط اضافه شد)
+            is_post_login_trigger=is_post_login_trigger
+        ))
+        
+        # اگر شناسه ناشناس جدیدی ساخته شده، آن را برگردان
+        if 'new_anonymous_user_id' in response_data:
+            anonymous_user_id = response_data['new_anonymous_user_id']
+
+        return jsonify({**response_data, 'anonymous_user_id': anonymous_user_id})
+    
+    # --- 🔽 این بخش را اضافه کنید 🔽 ---
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"Error in /chat endpoint for user {web_user_id}: {e}", exc_info=True)
+        # لاگ کردن خطا (توجه: web_user_id دیگر در اینجا تعریف نشده، پس لاگ را اصلاح می‌کنیم)
+        log_user_id = user_id if user_id else anonymous_user_id
+        logger.error(f"Error in /chat endpoint for user {log_user_id}: {e}", exc_info=True)
         
         if "429" in error_msg or "quota" in error_msg.lower() or "exceeded" in error_msg.lower():
             return jsonify({
@@ -1690,6 +1810,9 @@ def chat():
                 'reply_type': 'standard',
                 'reply': '⚠️ یک خطای داخلی در سرور رخ داد.'
             }), 500
+    # --- 🔼 پایان بخش اضافه شده 🔼 ---
+
+        return jsonify({**response_data, 'anonymous_user_id': anonymous_user_id})
 
 def start_analysis():
     data = request.json
@@ -1887,6 +2010,274 @@ def admin_advanced_test():
             "message": "خطا در اجرای تست شبیه‌سازی"
         }), 500
 
+
+# ==============================================================================
+# 10) Authentication API Endpoints (OTP)
+# ==============================================================================
+
+def normalize_phone(phone: str) -> str | None:
+    """شماره موبایل را نرمال‌سازی می‌کند (مثال: 09121234567)"""
+    if not phone:
+        return None
+    # حذف همه چیز به جز اعداد
+    phone_digits = re.sub(r'\D', '', phone)
+    
+    # اگر با +98 شروع شده، آن را با 0 جایگزین کن
+    if phone_digits.startswith('98'):
+        phone_digits = '0' + phone_digits[2:]
+        
+    # بررسی فرمت (مثلاً 09xxxxxxxxx)
+    if re.match(r'^09\d{9}$', phone_digits):
+        return phone_digits
+    
+    logger.warning(f"Invalid phone number format: {phone}")
+    return None
+
+@app.route('/api/send-otp', methods=['POST'])
+def api_send_otp():
+    """
+    یک کد OTP به شماره موبایل کاربر ارسال می‌کند.
+    """
+    data = request.json
+    phone_number_raw = data.get('phone_number')
+    
+    phone_number = normalize_phone(phone_number_raw)
+    
+    if not phone_number:
+        return jsonify({'error': 'فرمت شماره موبایل اشتباه است. (مثال: 09121234567)'}), 400
+        
+    # --- (اصلاح شد) ---
+    # بررسی صریح حالت تست
+    # اگر kaveh_api None باشد یا کلید API برابر با TEST_MODE باشد
+    is_test_mode = (not kaveh_api) or (KAVEHNEGAR_API_KEY == "TEST_MODE")
+    
+    if is_test_mode:
+        logger.error("Kavenegar API is not configured or in TEST_MODE. Cannot send OTP.")
+        logger.warning("!!! KAVEHNEGAR API NOT SET. USING TEST OTP: 123456 !!!")
+        code = "123456" # <--- استفاده اجباری از کد تست
+    else:
+        # ارسال واقعی
+        code = str(random.randint(100000, 999999))
+        try:
+            # الگو (template) خود در کاوه‌نگار را اینجا بگذارید
+            # response = kaveh_api.verify_lookup({'receptor': phone_number, 'token': code, 'template': 'YourTemplateName'})
+            # logger.info(f"OTP Sent. Receptor: {phone_number}, Response: {response}")
+            
+            # حالت شبیه‌سازی (برای تست بدون ارسال واقعی)
+            logger.info(f"!!! SIMULATING Kavehnegar Send. Phone: {phone_number}, Code: {code} !!!")
+            
+        except Exception as e:
+            logger.error(f"Kavenegar API error: {e}")
+            return jsonify({'error': 'خطا در ارسال پیامک. لطفاً دقایقی دیگر تلاش کنید.'}), 500
+
+    # ذخیره کد در دیتابیس
+    try:
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        with engine.connect() as conn:
+            # کدهای قبلی این شماره را پاک کن
+            conn.execute(text("DELETE FROM public.otps WHERE phone_number = :phone"), {"phone": phone_number})
+            # کد جدید را اضافه کن
+            conn.execute(
+                text("INSERT INTO public.otps (phone_number, code, expires_at) VALUES (:phone, :code, :exp)"),
+                {"phone": phone_number, "code": code, "exp": expires_at}
+            )
+            conn.commit()
+        
+        return jsonify({'success': True, 'message': 'کد تایید ارسال شد.'})
+        
+    except Exception as e:
+        logger.error(f"Error saving OTP to DB: {e}", exc_info=True)
+        return jsonify({'error': 'خطای داخلی در ذخیره کد.'}), 500
+
+@app.route('/api/verify-otp', methods=['POST'])
+def api_verify_otp():
+    """
+    کد OTP را تایید می‌کند، کاربر را لاگین/ثبت‌نام می‌کند،
+    چت‌های ناشناس را به او متصل می‌کند و توکن JWT برمی‌گرداند.
+    """
+    data = request.json
+    phone_number_raw = data.get('phone_number')
+    code = data.get('code')
+    anonymous_user_id = data.get('anonymous_user_id') # شناسه چت مهمان
+
+    phone_number = normalize_phone(phone_number_raw)
+
+    if not phone_number or not code:
+        return jsonify({'error': 'شماره موبایل و کد الزامی است.'}), 400
+
+    try:
+        with engine.connect() as conn:
+            # ۱. بررسی کد OTP
+            now = datetime.now(timezone.utc)
+            otp_result = conn.execute(
+                text("SELECT id FROM public.otps WHERE phone_number = :phone AND code = :code AND expires_at > :now"),
+                {"phone": phone_number, "code": code, "now": now}
+            ).mappings().first()
+            
+            # --- (اصلاح شد) ---
+            # بررسی صریح حالت تست
+            is_test_mode = (not kaveh_api) or (KAVEHNEGAR_API_KEY == "TEST_MODE")
+
+            if not otp_result:
+                # حالت تست: اجازه ورود با کد ۱۲۳۴۵۶ اگر کاوه‌نگار تنظیم نشده
+                if is_test_mode and code == "123456":
+                    logger.warning(f"Bypassing OTP check for {phone_number} with test code 123456")
+                else:
+                    return jsonify({'error': 'کد تایید اشتباه است یا منقضی شده.'}), 400
+            
+            # کد استفاده شد، آن را پاک کن
+            conn.execute(text("DELETE FROM public.otps WHERE phone_number = :phone"), {"phone": phone_number})
+            
+            # ۲. پیدا کردن یا ساختن کاربر
+            user_id = conn.execute(
+                text("SELECT id FROM public.users WHERE phone_number = :phone"),
+                {"phone": phone_number}
+            ).scalar_one_or_none()
+            
+            if not user_id:
+                # ثبت نام کاربر جدید
+                user_id = conn.execute(
+                    text("INSERT INTO public.users (phone_number) VALUES (:phone) RETURNING id"),
+                    {"phone": phone_number}
+                ).scalar_one()
+                logger.info(f"New user created. Phone: {phone_number}, UserID: {user_id}")
+            else:
+                logger.info(f"User logged in. Phone: {phone_number}, UserID: {user_id}")
+            
+            # ۳. (مهم) انتقال چت‌های ناشناس (منطق اصلاح شده برای مشکل 2)
+            if anonymous_user_id:
+                # --- (اصلاح شده) ---
+                # ابتدا بررسی کن آیا این کاربر (user_id) از قبل چتی دارد یا نه
+                existing_chat_id = conn.execute(
+                    text("SELECT id FROM public.conversations WHERE user_id = :uid LIMIT 1"),
+                    {"uid": user_id}
+                ).scalar_one_or_none()
+
+                if existing_chat_id:
+                    # اگر کاربر از قبل چت دارد (یعنی فقط لاگین کرده):
+                    # چت ناشناس جدید (مثلاً با یک "سلام") را نادیده بگیر و حذف کن.
+                    logger.info(f"User {user_id} already has chat {existing_chat_id}. Discarding new anonymous chat {anonymous_user_id}.")
+                    conn.execute(
+                        text("DELETE FROM public.conversations WHERE anonymous_user_id = :aid"),
+                        {"aid": anonymous_user_id}
+                    )
+                else:
+                    # اگر کاربر از قبل چت ندارد (اولین بار است لاگین می‌کند):
+                    # چت ناشناس را به او منتقل کن.
+                    try:
+                        conn.execute(
+                            text("""
+                                UPDATE public.conversations 
+                                SET user_id = :uid, anonymous_user_id = NULL 
+                                WHERE anonymous_user_id = :aid
+                            """),
+                            {"uid": user_id, "aid": anonymous_user_id}
+                        )
+                        logger.info(f"First-time login. Merged anonymous chat {anonymous_user_id} to new user {user_id}")
+                    except IntegrityError:
+                        logger.warning(f"Could not merge chat {anonymous_user_id}. IntegrityError.")
+                        pass # ادامه می‌دهیم
+                # --- پایان اصلاح ---
+            
+            # ۴. ساخت توکن JWT
+            token_payload = {
+                'user_id': user_id,
+                'phone': phone_number,
+                'exp': datetime.now(timezone.utc) + timedelta(days=30) # ۳۰ روز اعتبار
+            }
+            token = jwt.encode(token_payload, JWT_SECRET_KEY, algorithm="HS256")
+            
+            conn.commit()
+            
+            return jsonify({'success': True, 'token': token, 'user_id': user_id})
+
+    except Exception as e:
+        logger.error(f"Error in verify-otp: {e}", exc_info=True)
+        return jsonify({'error': 'خطای داخلی سرور هنگام تایید.'}), 500
+
+# دکوریتور برای چک کردن توکن (اختیاری ولی خوب است)
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            try:
+                token = request.headers['Authorization'].split(" ")[1]
+            except IndexError:
+                return jsonify({'error': 'Token format is invalid'}), 401
+        
+        if not token:
+            return jsonify({'error': 'Token is missing'}), 401
+        
+        try:
+            data = jwt.decode(token, JWT_SECRET_KEY, algorithms=["HS256"])
+            current_user_id = data['user_id']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token has expired'}), 401
+        except Exception as e:
+            logger.error(f"Token decode error: {e}")
+            return jsonify({'error': 'Token is invalid'}), 401
+            
+        return f(current_user_id, *args, **kwargs)
+    return decorated
+
+@app.route('/api/get-my-chats', methods=['GET'])
+@token_required
+def get_my_chats(current_user_id):
+    """ یک اندپوینت امن که چت‌های کاربر لاگین شده را برمی‌گرداند """
+    try:
+        with engine.connect() as conn:
+            chats = conn.execute(
+                text("""
+                    SELECT id, conversation_history, career_profile, updated_at 
+                    FROM public.conversations 
+                    WHERE user_id = :uid 
+                    ORDER BY updated_at DESC
+                """),
+                {"uid": current_user_id}
+            ).mappings().all()
+            
+            return jsonify([dict(chat) for chat in chats])
+            
+    except Exception as e:
+        logger.error(f"Error getting chats for user {current_user_id}: {e}", exc_info=True)
+        return jsonify({'error': 'خطا در دریافت چت‌ها'}), 500
+
+@app.route('/admin/view-chat/<int:conversation_id>')
+@require_admin_auth
+def admin_view_chat(conversation_id):
+    """صفحه مشاهده چت برای ادمین"""
+    try:
+        with engine.connect() as conn:
+            # دریافت مکالمه و اطلاعات کاربر
+            chat_data = conn.execute(text("""
+                SELECT 
+                    c.conversation_history,
+                    u.phone_number,
+                    c.anonymous_user_id
+                FROM public.conversations c
+                LEFT JOIN public.users u ON c.user_id = u.id
+                WHERE c.id = :cid
+            """), {"cid": conversation_id}).mappings().first()
+            
+            if not chat_data:
+                return "چت یافت نشد.", 404
+            
+            history = chat_data['conversation_history']
+            if isinstance(history, str):
+                history = json.loads(history)
+            
+            identifier = chat_data['phone_number'] or chat_data['anonymous_user_id']
+
+            return render_template_string(
+                ADMIN_VIEW_CHAT_TEMPLATE,
+                conversation_id=conversation_id,
+                identifier=identifier,
+                conversation_data=history
+            )
+    except Exception as e:
+        logger.error(f"Error in admin_view_chat: {e}", exc_info=True)
+        return "خطای سرور در بارگذاری چت", 500        
 # ==============================================================================
 # Main Application Routes
 # ==============================================================================

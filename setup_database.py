@@ -1,29 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Job Assistant - Database Bootstrap (clean edition)
+Job Assistant - Database Bootstrap (v2 - with OTP Login)
 ==================================================
 
 - Creates DB (if missing)
 - Installs extensions (pgvector, uuid-ossp)
-- Creates tables aligned with your SQL dump:
-    • users
-    • conversations
-    • prompts        (prompt_key PRIMARY KEY, last_updated)
-    • settings       (setting_key PRIMARY KEY, last_updated)
+- Creates tables:
+    • users (phone_number PRIMARY KEY)
+    • conversations (links to users.id OR an anonymous_user_id)
+    • otps (for SMS login)
+    • prompts
+    • settings
     • shared_chats
-    • jobs           (id PRIMARY KEY, title, job_zone INT, embedding vector, onet_code, description, onet_profile)
-- Seeds minimal settings/prompts + a few sample jobs
-- Optionally imports jobs from jobs_rows.csv (with embedding as vector)
-
-Run:
-    python setup_database.py
+- Seeds minimal settings/prompts
 """
 
 import os
 import sys
 import json
-import csv
 import logging
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
@@ -54,8 +49,8 @@ DB_NAME = os.getenv("DB_NAME")
 
 DEFAULT_GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "models/gemini-flash-latest")
-
-CSV_PATH = os.getenv("JOBS_CSV_PATH", "jobs_rows.csv")
+DEFAULT_ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+DEFAULT_JWT_SECRET = os.getenv("JWT_SECRET_KEY", "DEFAULT_FALLBACK_SECRET_KEY_CHANGE_ME")
 
 PROJECT_DSN = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 ADMIN_DSN   = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/postgres"
@@ -65,19 +60,6 @@ ADMIN_DSN   = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/postgres"
 # ------------------------------------------------------------------------------
 def _engine(dsn: str):
     return create_engine(dsn, pool_pre_ping=True)
-
-def to_pgvector_literal(vec):
-    """list[float] -> '[f1,f2,...]' as pgvector literal string."""
-    if isinstance(vec, str):
-        # assume already a JSON string like "[...]" -> keep as is
-        try:
-            arr = json.loads(vec)
-            vec = arr
-        except Exception:
-            return vec  # let db fail if it's not valid
-    if not isinstance(vec, (list, tuple)):
-        raise ValueError("embedding must be list/tuple or JSON string")
-    return "[" + ",".join(f"{float(x):.8f}" for x in vec) + "]"
 
 # ------------------------------------------------------------------------------
 # 1) Create database (if not exists)
@@ -126,39 +108,31 @@ def create_extensions():
         return False
 
 # ------------------------------------------------------------------------------
-# 3) Tables (aligned with your SQL)
+# 3) Tables (v2 Schema)
 # ------------------------------------------------------------------------------
 def create_tables():
-    # users (similar to your current app expectations)
+    # users (جدید: مبتنی بر شماره موبایل)
     users_table = """
     CREATE TABLE IF NOT EXISTS public.users (
         id SERIAL PRIMARY KEY,
-        telegram_user_id VARCHAR(100) UNIQUE NOT NULL,
+        phone_number VARCHAR(20) UNIQUE NOT NULL,
         first_name VARCHAR(100),
-        ip_address INET,
-        user_agent TEXT,
-        browser_name VARCHAR(50),
-        browser_version VARCHAR(20),
-        operating_system VARCHAR(50),
-        device_type VARCHAR(20),
-        country VARCHAR(50),
-        city VARCHAR(50),
-        timezone VARCHAR(50),
-        language VARCHAR(10),
-        referrer TEXT,
-        session_id UUID,
-        visit_count INTEGER DEFAULT 1,
         created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW(),
-        last_seen TIMESTAMP DEFAULT NOW()
+        updated_at TIMESTAMP DEFAULT NOW()
     );
     """
 
-    # conversations (user_embedding as vector; app casts to vector)
+    # conversations (جدید: پشتیبانی از کاربر مهمان و کاربر لاگین شده)
     conversations_table = """
     CREATE TABLE IF NOT EXISTS public.conversations (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES public.users(id) ON DELETE CASCADE,
+        
+        -- این برای کاربران لاگین شده است
+        user_id INTEGER REFERENCES public.users(id) ON DELETE CASCADE, 
+        
+        -- این برای کاربران ناشناس قبل از لاگین است
+        anonymous_user_id VARCHAR(100) UNIQUE, 
+        
         conversation_history JSONB DEFAULT '[]'::jsonb,
         career_profile JSONB,
         evidence JSONB,
@@ -171,11 +145,33 @@ def create_tables():
         final_report_text TEXT,
         report_generated TIMESTAMP,
         created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
+        updated_at TIMESTAMP DEFAULT NOW(),
+
+        -- اطمینان از اینکه هر چت یا به کاربر ناشناس یا به کاربر لاگین شده متصل است
+        CONSTRAINT chk_user_or_anonymous CHECK (
+            (user_id IS NOT NULL AND anonymous_user_id IS NULL) OR
+            (user_id IS NULL AND anonymous_user_id IS NOT NULL)
+        )
     );
+    -- ایجاد ایندکس روی هر دو کلید خارجی برای جستجوی سریع
+    CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON public.conversations(user_id);
+    CREATE INDEX IF NOT EXISTS idx_conversations_anonymous_user_id ON public.conversations(anonymous_user_id);
+    """
+    
+    # otps (جدید: برای کدهای یکبار مصرف)
+    otps_table = """
+    CREATE TABLE IF NOT EXISTS public.otps (
+        id SERIAL PRIMARY KEY,
+        phone_number VARCHAR(20) NOT NULL,
+        code VARCHAR(10) NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        expires_at TIMESTAMP NOT NULL
+    );
+    -- ایجاد ایندکس برای جستجوی سریع کدها
+    CREATE INDEX IF NOT EXISTS idx_otps_phone_code ON public.otps(phone_number, code);
     """
 
-    # prompts (key as PRIMARY KEY + last_updated)
+    # prompts (بدون تغییر)
     prompts_table = """
     CREATE TABLE IF NOT EXISTS public.prompts (
         prompt_key TEXT PRIMARY KEY,
@@ -184,7 +180,7 @@ def create_tables():
     );
     """
 
-    # settings (key as PRIMARY KEY + last_updated)
+    # settings (بدون تغییر)
     settings_table = """
     CREATE TABLE IF NOT EXISTS public.settings (
         setting_key TEXT PRIMARY KEY,
@@ -193,7 +189,7 @@ def create_tables():
     );
     """
 
-    # shared_chats (as your app uses)
+    # shared_chats (بدون تغییر)
     shared_chats_table = """
     CREATE TABLE IF NOT EXISTS public.shared_chats (
         id SERIAL PRIMARY KEY,
@@ -203,21 +199,15 @@ def create_tables():
         created_at TIMESTAMP DEFAULT NOW(),
         expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '30 days'),
         view_count INTEGER DEFAULT 0,
-        last_viewed_at TIMESTAMP
+        last_viewed_at TIMESTAMP,
+        career_profile JSONB -- ستون از قبل اضافه شده بود, اینجا فقط برای اطمینان
     );
-    """
-
-    -- simple btree index on job_zone for filtering
-    CREATE INDEX IF NOT EXISTS jobs_job_zone_idx ON public.jobs (job_zone);
-
-    -- ایندکس وکتور را حذف کنید
-    -- CREATE INDEX IF NOT EXISTS jobs_embedding_idx
-    --   ON public.jobs USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
     """
 
     stmts = [
         ("users", users_table),
         ("conversations", conversations_table),
+        ("otps", otps_table),
         ("prompts", prompts_table),
         ("settings", settings_table),
         ("shared_chats", shared_chats_table),
@@ -242,23 +232,26 @@ def create_tables():
         return False
 
 # ------------------------------------------------------------------------------
-# 4) Seed minimal data (with rollback-per-row safety)
+# 4) Seed minimal data
 # ------------------------------------------------------------------------------
 def insert_initial_data():
     initial_settings = [
         ("GEMINI_API_KEY", DEFAULT_GEMINI_API_KEY),
         ("SELECTED_LLM_MODEL", DEFAULT_MODEL),
-        ("ADMIN_PASSWORD", os.getenv("ADMIN_PASSWORD")),
+        ("ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD),
+        ("JWT_SECRET_KEY", DEFAULT_JWT_SECRET),
+        ("KAVEHNEGAR_API_KEY", os.getenv("KAVEHNEGAR_API_KEY", "YOUR_API_KEY")),
         ("MAX_CONVERSATION_LENGTH", os.getenv("MAX_CONVERSATION_LENGTH", "100")),
         ("SESSION_TIMEOUT", os.getenv("SESSION_TIMEOUT", "3600")),
     ]
 
     initial_prompts = [
         ("COUNSELOR_MANIFESTO", "شما یک مشاور شغلی حرفه‌ای هستید که به کاربران کمک می‌کنید تا مسیر شغلی مناسب خود را پیدا کنند."),
-        ("PERSONALITY_PARAGRAPH_PROMPT", "بر اساس پروفایل شغلی زیر، یک پاراگراف شخصیت‌شناسی بنویسید."),
+        ("PERSONALITY_PARAGAGRAPH_PROMPT", "بر اساس پروفایل شغلی زیر، یک پاراگراف شخصیت‌شناسی بنویسید."),
         ("SYSTEM_ERROR_MESSAGE", "متاسفانه خطایی در سیستم رخ داده است. لطفاً دوباره تلاش کنید."),
         ("UNEXPECTED_ERROR_MESSAGE", "خطای غیرمنتظره‌ای رخ داده است."),
         ("ANALYSIS_START_MESSAGE", "تحلیل اطلاعات شما شروع شد. لطفاً صبر کنید..."),
+        # (پرامپت‌های دیگر شما در راه‌اندازی بعدی app.py اضافه خواهند شد)
     ]
 
     try:
@@ -266,6 +259,9 @@ def insert_initial_data():
         with engine.connect() as conn:
             # settings (upsert on key)
             for key, val in initial_settings:
+                if val is None:
+                    log.warning(f"⚠️ Skipping setting {key} as it is None")
+                    continue
                 trx = conn.begin()
                 try:
                     conn.execute(
@@ -303,9 +299,6 @@ def insert_initial_data():
                 except Exception as e:
                     trx.rollback()
                     log.warning(f"⚠️ prompts[{key}]: {e}")
-
-            # a few sample jobs without id/embedding (for health check)
-
         return True
     except Exception as e:
         log.error(f"❌ insert_initial_data: {e}")
@@ -313,13 +306,14 @@ def insert_initial_data():
 
 
 # ------------------------------------------------------------------------------
-# 6) Verify
+# 5) Verify (اصلاح شده)
 # ------------------------------------------------------------------------------
 def verify_setup():
     try:
         engine = _engine(PROJECT_DSN)
         with engine.connect() as conn:
-            for tbl in ["users","conversations","prompts","settings","shared_chats","jobs"]:
+            # 'jobs' از لیست بررسی حذف شد چون در اسکریپت شما تعریف نشده بود
+            for tbl in ["users","conversations","prompts","settings","shared_chats","otps"]:
                 try:
                     cnt = conn.execute(text(f"SELECT COUNT(*) FROM public.{tbl}")).scalar()
                     log.info(f"✅ {tbl}: {cnt} rows")
@@ -328,7 +322,7 @@ def verify_setup():
                     return False
 
             exts = conn.execute(
-                text("SELECT extname FROM pg_extension WHERE extname IN ('vector','uuid-ossp');")
+                text("SELECT extname FROM pg_extension WHERE extname IN ('uuid-ossp');")
             ).fetchall()
             log.info(f"✅ extensions: {[e[0] for e in exts]}")
         return True
@@ -340,7 +334,27 @@ def verify_setup():
 # Main
 # ------------------------------------------------------------------------------
 def main():
-    log.info("🚀 DB bootstrap started")
+    log.info("🚀 DB bootstrap started (v2 Schema with Login)")
+    
+    # اخطار مهم قبل از شروع
+    log.warning("="*60)
+    log.warning("!!! هشدار !!!")
+    log.warning("این اسکریپت ساختار دیتابیس را برای پشتیبانی از لاگین تغییر می‌دهد.")
+    log.warning(f"دیتابیس هدف: {DB_NAME} روی {DB_HOST}")
+    log.warning("اگر دیتابیس فعلی شما حاوی اطلاعات است، اکیداً توصیه می‌شود ابتدا یک نسخه پشتیبان تهیه کنید.")
+    log.warning("="*60)
+    
+    # در محیط production, این بخش را برای تأیید دستی فعال کنید
+    # if os.getenv("FLASK_ENV") != "development":
+    #     try:
+    #         response = input("آیا ادامه می‌دهید؟ (yes/no): ")
+    #         if response.lower() != 'yes':
+    #             log.info("عملیات لغو شد.")
+    #             return False
+    #     except EOFError:
+    #         log.error("ورودی نامعتبر. عملیات لغو شد.")
+    #         return False
+            
     if not create_database_if_not_exists():
         return False
     if not create_extensions():

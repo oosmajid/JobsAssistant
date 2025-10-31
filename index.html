@@ -500,6 +500,137 @@
             color: #ffc107;
         }
         
+
+        /* --- استایل‌های جدید برای مودال لاگین --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            display: none; /* اول مخفی است */
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            backdrop-filter: blur(5px);
+        }
+        
+        .modal-overlay.show {
+            display: flex;
+        }
+        
+        .login-modal {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+            animation: modalSlideIn 0.3s ease-out;
+        }
+        
+        @keyframes modalSlideIn {
+            from { opacity: 0; transform: translateY(-30px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .login-modal h3 {
+            margin-top: 0;
+            margin-bottom: 1rem;
+            color: #333;
+        }
+        
+        .login-modal p {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 1.5rem;
+        }
+
+        .login-input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 1em;
+            text-align: left; /* برای شماره موبایل و کد بهتر است */
+            direction: ltr;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            margin-bottom: 1rem;
+            box-sizing: border-box;
+        }
+        
+        .login-input::placeholder {
+            text-align: right;
+            direction: rtl;
+        }
+
+        .login-button-primary {
+            width: 100%;
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+        }
+        
+        .login-button-primary:hover {
+            background-color: #0056b3;
+        }
+        
+        .login-button-primary:disabled {
+            background-color: #aaa;
+            cursor: not-allowed;
+        }
+        
+        .login-modal-close {
+            position: absolute;
+            top: 15px;
+            left: 20px; /* چون مودال فارسی است، دکمه بستن را سمت چپ می‌گذاریم */
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: #aaa;
+            cursor: pointer;
+        }
+        .login-modal-close:hover { color: #333; }
+        
+        .login-error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.9em;
+            margin-bottom: 1rem;
+            display: none; /* در ابتدا مخفی */
+        }
+        
+        #otp-step {
+            display: none; /* مرحله دوم در ابتدا مخفی */
+        }
+        
+        /* حالت تاریک برای مودال */
+        body.dark-mode .login-modal {
+            background: #2d2d2d;
+        }
+        body.dark-mode .login-modal h3 { color: #eee; }
+        body.dark-mode .login-modal p { color: #bbb; }
+        body.dark-mode .login-input {
+            background: #404040;
+            color: #fff;
+            border-color: #555;
+        }
+        body.dark-mode .login-modal-close { color: #888; }
+        body.dark-mode .login-modal-close:hover { color: #fff; }
+        /* --- پایان استایل‌های مودال --- */
+
         /* Mobile Responsive Design */
         @media (max-width: 768px) {
             body {
@@ -734,6 +865,12 @@
         <div class="chat-header-content">
             <div>مشاور شغلی هزارجاب</div>
             <div class="header-right">
+                <button class="new-chat-button" id="login-button" style="background-color: #007bff; color: white; border-color: #007bff;">
+                    <i class="fas fa-sign-in-alt"></i> ورود / ثبت‌نام
+                </button>
+                <button class="new-chat-button" id="logout-button" style="display: none; background-color: #dc3545; color: white; border-color: #dc3545;">
+                    خروج
+                </button>
                 <button class="quick-test-button" id="quick-test-button" title="تست سریع (ادمین)">⚡ تست سریع</button>
                 <button class="simulation-test-button" id="simulation-test-button" title="تست شبیه‌سازی پیشرفته (ادمین)">🧪 تست شبیه‌سازی</button>
                 <button class="share-button" id="share-button" title="اشتراک‌گذاری چت">
@@ -776,6 +913,33 @@
             </div>
         </div>
     </div>
+
+    <div class="modal-overlay" id="login-modal-overlay">
+        <div class="login-modal">
+            <button class="login-modal-close" id="login-modal-close-btn">&times;</button>
+            
+            <div id="phone-step">
+                <h3>ورود یا ثبت‌نام</h3>
+                <p>برای ادامه و مشاهده تحلیل، لطفاً شماره موبایل خود را وارد کنید.</p>
+                <div class="login-error" id="login-error-phone"></div>
+                <input type="tel" id="phone-input" class="login-input" placeholder="مثال: 09121234567">
+                <button id="send-otp-btn" class="login-button-primary">ارسال کد تایید</button>
+            </div>
+            
+            <div id="otp-step">
+                <h3>کد تایید را وارد کنید</h3>
+                <p id="otp-message">کد ۶ رقمی ارسال شده به شماره زیر را وارد کنید:</p>
+                <p id="user-phone-display" style="font-weight: bold; color: #333; direction: ltr;"></p>
+                <div class="login-error" id="login-error-otp"></div>
+                <input type="tel" id="otp-input" class="login-input" placeholder="کد تایید ۶ رقمی" maxlength="6">
+                <button id="verify-otp-btn" class="login-button-primary">تایید و ورود</button>
+                <button id="change-phone-btn" style="background: none; border: none; color: #007bff; cursor: pointer; margin-top: 1rem; font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;">
+                    تغییر شماره موبایل
+                </button>
+            </div>
+        </div>
+    </div>
+    
     <script>
         // Configuration
         // برای تغییر URL سرور، این متغیرها را تغییر دهید:
@@ -807,11 +971,40 @@
         const copyShareLink = document.getElementById('copy-share-link');
         const quickTestButton = document.getElementById('quick-test-button');
         const simulationTestButton = document.getElementById('simulation-test-button');
+        // --- المان‌های جدید برای لاگین ---
+        const loginButton = document.getElementById('login-button');
+        const logoutButton = document.getElementById('logout-button');
+        const loginModalOverlay = document.getElementById('login-modal-overlay');
+        const loginModalCloseBtn = document.getElementById('login-modal-close-btn');
         
-        let userId = 'web_user_' + Date.now() + Math.random().toString(36).substr(2, 9);
+        const phoneStep = document.getElementById('phone-step');
+        const otpStep = document.getElementById('otp-step');
+        
+        const phoneInput = document.getElementById('phone-input');
+        const sendOtpBtn = document.getElementById('send-otp-btn');
+        const changePhoneBtn = document.getElementById('change-phone-btn');
+        
+        const otpInput = document.getElementById('otp-input');
+        const verifyOtpBtn = document.getElementById('verify-otp-btn');
+        const userPhoneDisplay = document.getElementById('user-phone-display');
+        
+        const loginErrorPhone = document.getElementById('login-error-phone');
+        const loginErrorOtp = document.getElementById('login-error-otp');
+        // --- پایان المان‌های لاگین ---
+        
+        // شناسه کاربر ناشناس (مهمان)
+        let anonymous_user_id = localStorage.getItem('anonymous_user_id') || 'web_user_' + Date.now() + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('anonymous_user_id', anonymous_user_id);
+        
+        let authToken = localStorage.getItem('authToken'); // توکن کاربر لاگین شده
+        let pendingLoginGate = (localStorage.getItem('pendingLoginGate') === '1'); // فلگ ادامه پس از لاگین
+        let userCareerProfile = null; // پروفایل شغلی (بدون تغییر)
+        
+        // متغیرهای مربوط به چت فعلی
+        let currentConversationId = null; // <<< (جدید) ID چت فعلی را نگه می‌داریم
+        
         let recognition = null;
         let isRecording = false;
-        let userCareerProfile = null;
         let finalTranscript = ''; // ذخیره تمام متن نهایی تایید شده
         let isQuickTestMode = false; // برای غیرفعال کردن انیمیشن تایپ در تست سریع
         let silenceTimeout = null; // برای مدیریت سکوت
@@ -1132,12 +1325,40 @@
             const indicatorRow = document.getElementById('user-typing-indicator-row'); 
             if (indicatorRow) indicatorRow.remove(); 
         }
-        function startNewChat() {
+        function startNewChat(isReloadingAfterLogin = false) {
             chatMessages.innerHTML = '';
-            userId = 'web_user_' + Date.now() + Math.random().toString(36).substr(2, 9);
-            finalTranscript = ''; // ریست کردن متغیر متن نهایی
-            showTypingIndicator();
-            setTimeout(() => { removeTypingIndicator(); addTypedMessage('سلام! من مشاور شغلی «هزارجاب» هستم. برای اینکه بتونم بهتر کمکت کنم، لطفاً خودت رو کامل معرفی کن: نام، سن، جنسیت، وضعیت شغلی فعلی و رشتهٔ تحصیلی.', 'bot'); }, 1000);
+            currentConversationId = null; // ریست کردن شناسه چت
+            finalTranscript = '';
+            
+            // --- FIX: پاک کردن پیام معلق ---
+            localStorage.removeItem('pendingLoginGate');
+            localStorage.removeItem('pendingUserMessage');
+            // --- End FIX ---
+
+            // اگر کاربر لاگین نکرده، یک شناسه ناشناس جدید بساز
+            if (!authToken) {
+                anonymous_user_id = 'web_user_' + Date.now() + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('anonymous_user_id', anonymous_user_id);
+            } else {
+                anonymous_user_id = null;
+            }
+
+            // اگر بعد از لاگین در حال بارگذاری هستیم، پیام خوش‌آمدگویی را نشان نده
+            // (چون تابع sendMessage خودش چت‌های قبلی را بارگذاری می‌کند)
+            if (!isReloadingAfterLogin) {
+                showTypingIndicator();
+                setTimeout(() => { 
+                    removeTypingIndicator(); 
+                    addTypedMessage('سلام! من مشاور شغلی «هزارجاب» هستم. برای اینکه بتونم بهتر کمکت کنم، لطفاً خودت رو کامل معرفی کن: نام، سن، جنسیت، وضعیت شغلی فعلی و رشتهٔ تحصیلی.', 'bot'); 
+                }, 1000);
+            } else {
+                // اگر بعد از لاگین است، اولین پیام خالی را بفرست تا تاریخچه را بگیرد
+                // (این یک ترفند است، می‌توان آن را بهتر هم پیاده کرد)
+                // فعلاً این کار را نمی‌کنیم، اجازه می‌دهیم کاربر خودش پیام دهد
+                // یا می‌توانیم تابع /api/get-my-chats را فراخوانی کنیم
+                addMessage('✅ با موفقیت وارد شدید. مکالمات قبلی شما (در صورت وجود) بارگذاری شد.', 'bot');
+                // TODO: بارگذاری چت‌های قبلی از /api/get-my-chats
+            }
         }
         function toggleSpeechRecognition() {
             if (!recognition || sendButton.disabled) return;
@@ -1191,29 +1412,39 @@
         
         async function generateShareLink() {
             try {
+                // (جدید) هدرها و بدنه‌ی داینامیک بساز
+                const headers = {
+                    'Content-Type': 'application/json'
+                };
+                if (authToken) {
+                    headers['Authorization'] = `Bearer ${authToken}`;
+                }
+
+                const body = {
+                    conversation: getCurrentConversation(),
+                    career_profile: userCareerProfile,
+                    anonymous_user_id: anonymous_user_id // این را همیشه بفرست
+                };
+
                 const response = await fetch(SHARE_API_ENDPOINT, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        user_id: userId,
-                        conversation: getCurrentConversation(),
-                        career_profile: userCareerProfile
-                    })
+                    headers: headers, // (جدید)
+                    body: JSON.stringify(body) // (جدید)
                 });
                 
                 if (!response.ok) {
-                    throw new Error('خطا در تولید لینک اشتراک‌گذاری');
+                    const errData = await response.json();
+                    throw new Error(errData.error || 'خطا در تولید لینک');
                 }
                 
                 const data = await response.json();
                 const shareUrl = `${window.location.origin}/shared/${data.share_id}`;
                 shareLinkInput.value = shareUrl;
                 return shareUrl;
+
             } catch (error) {
                 console.error('Error generating share link:', error);
-                shareLinkInput.value = 'خطا در تولید لینک';
+                shareLinkInput.value = error.message; // نمایش خطای واقعی
                 return null;
             }
         }
@@ -1283,16 +1514,341 @@
             }
         }
 
+        // --- توابع جدید برای لاگین ---
+        
+        function openLoginModal() {
+            loginModalOverlay.classList.add('show');
+            phoneInput.focus();
+        }
+        
+        function closeLoginModal() {
+            loginModalOverlay.classList.remove('show');
+            // ریست کردن مودال
+            phoneStep.style.display = 'block';
+            otpStep.style.display = 'none';
+            phoneInput.value = '';
+            otpInput.value = '';
+            loginErrorPhone.style.display = 'none';
+            loginErrorOtp.style.display = 'none';
+        }
+
+        function showLoginError(step, message) {
+            if (step === 'phone') {
+                loginErrorPhone.textContent = message;
+                loginErrorPhone.style.display = 'block';
+            } else {
+                loginErrorOtp.textContent = message;
+                loginErrorOtp.style.display = 'block';
+            }
+        }
+        
+        async function handleSendOtp() {
+            const phone = phoneInput.value;
+            if (!/^09\d{9}$/.test(phone)) {
+                showLoginError('phone', 'فرمت شماره موبایل اشتباه است (مثال: 09121234567)');
+                return;
+            }
+            
+            sendOtpBtn.disabled = true;
+            sendOtpBtn.textContent = 'در حال ارسال...';
+            loginErrorPhone.style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/send-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone_number: phone })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'خطا در ارسال کد');
+                }
+                
+                // نمایش مرحله دوم
+                userPhoneDisplay.textContent = phone;
+                phoneStep.style.display = 'none';
+                otpStep.style.display = 'block';
+                otpInput.focus();
+                
+            } catch (error) {
+                showLoginError('phone', error.message);
+            } finally {
+                sendOtpBtn.disabled = false;
+                sendOtpBtn.textContent = 'ارسال کد تایید';
+            }
+        }
+        
+        async function handleVerifyOtp() {
+            const phone = phoneInput.value; // شماره از مرحله قبل
+            const code = otpInput.value;
+            
+            if (code.length < 5) { // کد می‌تواند ۵ یا ۶ رقمی باشد
+                showLoginError('otp', 'کد تایید نامعتبر است.');
+                return;
+            }
+            
+            verifyOtpBtn.disabled = true;
+            verifyOtpBtn.textContent = 'در حال تایید...';
+            loginErrorOtp.style.display = 'none';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/verify-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        phone_number: phone, 
+                        code: code,
+                        anonymous_user_id: anonymous_user_id // مهم: شناسه چت مهمان را می‌فرستیم
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'خطا در تایید کد');
+                }
+                
+                // --- موفقیت! ---
+                // ۱. ذخیره توکن
+                authToken = data.token;
+                localStorage.setItem('authToken', authToken);
+                
+                // ۲. پاک کردن شناسه ناشناس (چون چت‌ها منتقل شدند)
+                localStorage.removeItem('anonymous_user_id');
+                anonymous_user_id = null;
+                
+                // ۳. آپدیت UI
+                updateLoginButton();
+                closeLoginModal();
+                
+                // ۴. بارگذاری مجدد چت‌ها
+                alert('ورود شما با موفقیت انجام شد. چت‌های شما در حال بارگذاری مجدد هستند.');
+                startNewChat(true); // ریست کردن چت برای بارگذاری تاریخچه کاربر
+                await loadAndDisplayHistory(); // پس از ورود، تاریخچه چت کاربر را نمایش بده
+
+                // ۳. حالا تابع ادامه را صدا بزن
+                await continueAfterLoginIfNeeded();
+                // --- End FIX ---
+                
+            } catch (error) {
+                showLoginError('otp', error.message);
+            } finally {
+                verifyOtpBtn.disabled = false;
+                verifyOtpBtn.textContent = 'تایید و ورود';
+            }
+        }
+        
+        function updateLoginButton() {
+            if (authToken) {
+                // کاربر لاگین است
+                loginButton.style.display = 'none';
+                if (logoutButton) logoutButton.style.display = 'inline-block';
+            } else {
+                // کاربر لاگین نیست
+                loginButton.style.display = 'inline-block';
+                loginButton.innerHTML = '<i class="fas fa-sign-in-alt"></i> ورود / ثبت‌نام';
+                loginButton.style.backgroundColor = '#007bff';
+                loginButton.style.borderColor = '#007bff';
+                if (logoutButton) logoutButton.style.display = 'none';
+            }
+        }
+        
+        function handleLoginClick() {
+            if (authToken) {
+                // خروج
+                if (confirm('آیا مطمئن هستید که می‌خواهید خارج شوید؟')) {
+                    localStorage.removeItem('authToken');
+                    authToken = null;
+                    updateLoginButton();
+                    startNewChat(false); // ریست کردن چت به حالت ناشناس
+                }
+            } else {
+                // ورود
+                openLoginModal();
+            }
+        }
+        
+        function handleLogoutClick() {
+            if (!authToken) return;
+            if (confirm('آیا مطمئن هستید که می‌خواهید خارج شوید؟')) {
+                localStorage.removeItem('authToken');
+                authToken = null;
+                // پاک کردن فلگ ادامه بعد از لاگین
+                pendingLoginGate = false;
+                localStorage.removeItem('pendingLoginGate');
+                localStorage.removeItem('pendingUserMessage');
+                updateLoginButton();
+                startNewChat(false);
+            }
+        }
+        // --- پایان توابع لاگین ---
+
+        // (جدید) تابعی برای بارگذاری تاریخچه چت کاربر
+        async function loadAndDisplayHistory() {
+            // فقط اگر کاربر لاگین است اجرا شود
+            if (!authToken) return;
+
+            addMessage('در حال بارگذاری مکالمات قبلی شما...', 'bot');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/get-my-chats`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('خطا در دریافت تاریخچه چت.');
+                }
+
+                const chats = await response.json();
+                
+                // پاک کردن پیام "در حال بارگذاری"
+                chatMessages.innerHTML = ''; 
+
+                if (chats && chats.length > 0) {
+                    // جدیدترین چت را بارگذاری کن (اولین آیتم در لیست)
+                    const latestChat = chats[0];
+                    currentConversationId = latestChat.id; // <--- مهم
+                    userCareerProfile = latestChat.career_profile;
+                    const history = latestChat.conversation_history || [];
+                    if (history.length > 0) {
+                        history.forEach(msg => {
+                            const text = (Array.isArray(msg.parts) ? msg.parts.join(' ') : msg.parts);
+                            addMessage(text, msg.role === 'model' ? 'bot' : 'user');
+                        });
+                        // چک کن آیا آخرین پیام مدل، خلاصه تاییدی ۴.۳ یا گیت لاگین است
+                        function lastBotMsgText(hist) {
+                            for (let i = hist.length - 1; i >= 0; --i) {
+                                if (hist[i].role === 'model') {
+                                    return (Array.isArray(hist[i].parts) ? hist[i].parts.join(' ') : hist[i].parts).trim();
+                                }
+                            }
+                            return '';
+                        }
+                        const lastText = lastBotMsgText(history);
+                        const isSummaryConfirm = lastText.includes('تصویر درستی ازت پیدا کردم') || lastText.includes('آیا این تصویر رو تایید می‌کنی') || lastText.includes('بر اساس حرف‌هات، من آدمی رو می‌بینم که');
+                        const isLoginGate = lastText.includes('برای مشاهده پیشنهادهای شغلی و تحلیل نهایی، لطفاً وارد شو') || lastText.includes('تحلیلت آماده‌ست. 🚀');
+                        if (!isSummaryConfirm && !isLoginGate) {
+                            addMessage('سلام! خوش برگشتی. مکالمه قبلی شما بارگذاری شد. می‌تونی ادامه بدی.', 'bot');
+                        }
+                        
+                    } else {
+                        addTypedMessage('سلام! خوش برگشتی. می‌خوای یک موضوع جدید رو شروع کنیم؟', 'bot');
+                    }
+                } else {
+                    // کاربر لاگین است اما هیچ چتی ندارد
+                    addTypedMessage('سلام! خوش برگشتی. برای اینکه بتونم بهتر کمکت کنم، لطفاً خودت رو کامل معرفی کن.', 'bot');
+                }
+
+            } catch (error) {
+                console.error('Error loading history:', error);
+                chatMessages.innerHTML = ''; // پاک کردن پیام لودینگ
+                addMessage('خطا در بارگذاری تاریخچه. لطفاً صفحه را رفرش کنید.', 'bot');
+            }
+        }
+
+        function getLastBotMessageText() {
+            const rows = Array.from(chatMessages.querySelectorAll('.message-row.bot-row .message'));
+            if (rows.length === 0) return '';
+            const last = rows[rows.length - 1];
+            const raw = last.getAttribute('data-raw-text') || last.textContent || '';
+            return raw.trim();
+        }
+
+        function wasLoginGateShown(text) {
+            if (!text) return false;
+            // عبارت کلیدی گیت لاگین
+            return text.includes('برای مشاهده پیشنهادهای شغلی و تحلیل نهایی، لطفاً وارد شو یا ثبت‌نام کن');
+        }
+
+        async function continueAfterLoginIfNeeded() {
+            if (!authToken) return; // فقط وقتی لاگین است
+            if (!pendingLoginGate) {
+                // برای سازگاری عقب‌رو: اگر فلگ نبود ولی متن گیت بود، ادامه بده
+                const lastTextFallback = getLastBotMessageText();
+                if (!wasLoginGateShown(lastTextFallback)) return;
+            }
+
+            // --- FIX 2 (حل مشکل "ادامه بده") ---
+            // پیام ذخیره شده را بخوان، اگر نبود از 'ادامه بده' به عنوان فال‌بک استفاده کن
+            const pendingMessage = localStorage.getItem('pendingUserMessage') || 'ادامه بده';
+            // --- End FIX 2 ---
+
+            let conversation = getCurrentConversation();
+
+            // چون تاریخچه بارگذاری شده شامل پیام تایید کاربر (pendingMessage) است،
+            // ما آن را از تاریخی که به بک‌اند می‌فرستیم حذف می‌کنیم
+            // تا بک‌اند (که انتظار دریافت آن را دارد) آن را دوباره اضافه کند و دوتایی نشود.
+            if (conversation.length > 0 && 
+                conversation[conversation.length - 1].role === 'user' &&
+                conversation[conversation.length - 1].parts[0] === pendingMessage) {
+                
+                console.log("Popping last user message from history before sending to 'continueAfterLogin'");
+                conversation.pop();
+            }
+
+            // درخواست ادامه پس از لاگین: بدون افزودن پیام کاربر به UI
+            const headers = { 'Content-Type': 'application/json' };
+            headers['Authorization'] = `Bearer ${authToken}`;
+            const body = {
+                message: pendingMessage,
+                conversation: conversation,
+                anonymous_user_id: null,
+                conversation_id: currentConversationId,
+                is_post_login_trigger: true
+            };
+            showTypingIndicator();
+            try {
+                const response = await fetch(CHAT_API_ENDPOINT, { method: 'POST', headers, body: JSON.stringify(body) });
+                const data = await response.json();
+                removeTypingIndicator();
+                if (!response.ok) {
+                    if (data.token_expired) {
+                        addMessage('⚠️ نشست شما منقضی شده. لطفاً دوباره وارد شوید.', 'bot');
+                        localStorage.removeItem('authToken');
+                        authToken = null;
+                        updateLoginButton();
+                        openLoginModal();
+                    }
+                    return;
+                }
+
+                if (data.conversation_id) {
+                    currentConversationId = data.conversation_id;
+                }
+                if (data.new_anonymous_user_id) {
+                    anonymous_user_id = data.new_anonymous_user_id;
+                    localStorage.setItem('anonymous_user_id', anonymous_user_id);
+                }
+
+                if (data.reply) {
+                    addTypedMessage(data.reply, 'bot');
+                }
+                // --- FIX 2 (ادامه) ---
+                // با موفقیت ادامه داده شد؛ فلگ‌ها را پاک کن
+                pendingLoginGate = false;
+                localStorage.removeItem('pendingLoginGate');
+                localStorage.removeItem('pendingUserMessage'); // <-- پیام ذخیره شده را پاک کن
+                // --- End FIX 2 ---
+            } catch (e) {
+                removeTypingIndicator();
+                console.error('continueAfterLoginIfNeeded error:', e);
+            }
+        }
+
         async function sendMessage() {
             const messageText = userInput.value.trim();
             if (messageText === '' || sendButton.disabled) return;
             
-            // توقف ضبط صدا هنگام ارسال پیام
+            // ... (کدهای توقف ضبط صدا - بدون تغییر) ...
             if (isRecording && recognition) {
                 recognition.stop();
                 isRecording = false;
                 micButton.classList.remove('recording');
-                // پاک کردن timeout سکوت و ریست کردن شمارنده
                 if (silenceTimeout) {
                     clearTimeout(silenceTimeout);
                     silenceTimeout = null;
@@ -1300,47 +1856,85 @@
                 restartAttempts = 0;
             }
             
+            const conversation = getCurrentConversation();
+            
             addMessage(messageText, 'user');
+
             userInput.value = '';
-            finalTranscript = ''; // ریست کردن متغیر متن نهایی
+            finalTranscript = ''; 
             userInput.dispatchEvent(new Event('input'));
             sendButton.disabled = true; userInput.disabled = true; micButton.disabled = true;
             showTypingIndicator();
 
             try {
-                // --- مرحله ۱: ارسال پیام و دریافت پاسخ فوری ---
-                // *** تغییر: حذف conversation از body ***
+                // --- ساخت هدر و بدنه‌ی درخواست (جدید) ---
+                const headers = { 'Content-Type': 'application/json' };
+                if (authToken) {
+                    headers['Authorization'] = `Bearer ${authToken}`;
+                }
+                
+                const body = {
+                    message: messageText,
+                    conversation: conversation,
+                    anonymous_user_id: anonymous_user_id, // شناسه مهمان
+                    conversation_id: currentConversationId // <<< (این خط اضافه شد)
+                };
+                
                 const response = await fetch(CHAT_API_ENDPOINT, { 
                     method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify({ 
-                        user_id: userId, 
-                        message: messageText, 
-                        conversation: getCurrentConversation() // *** اصلاح: ارسال تاریخچه به بک‌اند ***
-                    }), 
+                    headers: headers, 
+                    body: JSON.stringify(body), 
                 });
-                
-                if (!response.ok) {
-                    if (response.status === 429) { throw new Error('QUOTA_EXCEEDED'); }
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
+                // --- پایان تغییرات درخواست ---
                 
                 const data = await response.json();
                 removeTypingIndicator();
+
+                if (!response.ok) {
+                    if (data.token_expired) {
+                        // توکن منقضی شده
+                        addMessage('⚠️ نشست شما منقضی شده. لطفاً دوباره وارد شوید.', 'bot');
+                        localStorage.removeItem('authToken');
+                        authToken = null;
+                        updateLoginButton();
+                        openLoginModal();
+                    } else {
+                        throw new Error(data.reply || data.error || `HTTP ${response.status}`);
+                    }
+                    return; // ادامه نده
+                }
+
                 
-                // *** تغییر: حذف کامل بلاک if (analysis_started) ***
-                // همیشه پاسخ استاندارد را نمایش بده
-                addTypedMessage(data.reply, 'bot');
-                
-                // *** تغییر: ذخیره پروفایل اگر در پاسخ وجود داشت ***
-                if (data.career_profile) {
-                    userCareerProfile = data.career_profile;
+
+                // (جدید) شناسه چت و شناسه ناشناس را آپدیت کن
+                if (data.conversation_id) {
+                    currentConversationId = data.conversation_id;
+                }
+                if (data.new_anonymous_user_id) {
+                    anonymous_user_id = data.new_anonymous_user_id;
+                    localStorage.setItem('anonymous_user_id', anonymous_user_id);
                 }
                 
-                // فعال‌سازی مجدد ورودی برای پیام بعدی
-                sendButton.disabled = false; userInput.disabled = false; micButton.disabled = false;
-                if (window.innerWidth > 768 && !/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-                    userInput.focus();
+                // (جدید) بررسی سیگنال لاگین اجباری
+                if (data.reply_type === 'login_required') {
+
+                    // --- FIX 2 (شروع) ---
+                    // پیامی که کاربر تایپ کرده بود را ذخیره کن تا پس از لاگین استفاده شود
+                    localStorage.setItem('pendingUserMessage', messageText);
+                    // --- End FIX 2 ---
+
+                    pendingLoginGate = true;
+                    localStorage.setItem('pendingLoginGate', '1');
+                    addTypedMessage(data.reply, 'bot');
+                    // باز کردن خودکار مودال لاگین
+                    setTimeout(openLoginModal, 3500); 
+                } else {
+                    // پاسخ استاندارد
+                    addTypedMessage(data.reply, 'bot');
+                }
+                
+                if (data.career_profile) {
+                    userCareerProfile = data.career_profile;
                 }
 
             } catch (error) {
@@ -1349,10 +1943,14 @@
                 if (error.message === 'QUOTA_EXCEEDED') {
                     addMessage('⚠️ محدودیت استفاده روزانه API تمام شده است.', 'bot');
                 } else {
-                    addMessage('❌ خطایی در ارتباط با سرور رخ داد.', 'bot');
+                    addMessage(`❌ خطایی در ارتباط با سرور رخ داد: ${error.message}`, 'bot');
                 }
-                // همیشه در صورت خطا، ورودی را فعال کن
+            } finally {
+                // فعال‌سازی مجدد ورودی
                 sendButton.disabled = false; userInput.disabled = false; micButton.disabled = false;
+                if (window.innerWidth > 768 && !isMobileDevice()) {
+                    userInput.focus();
+                }
             }
         }
 
@@ -1885,12 +2483,63 @@
 
         // Event listener برای دکمه تست شبیه‌سازی
         simulationTestButton.addEventListener('click', startSimulationTest);
+        // --- Event Listeners جدید برای لاگین ---
+        loginButton.addEventListener('click', handleLoginClick);
+        if (logoutButton) {
+            logoutButton.addEventListener('click', handleLogoutClick);
+        }
+        loginModalCloseBtn.addEventListener('click', closeLoginModal);
+        
+        // بستن مودال با کلیک روی پس‌زمینه
+        loginModalOverlay.addEventListener('click', (e) => {
+            if (e.target === loginModalOverlay) {
+                closeLoginModal();
+            }
+        });
+        
+        sendOtpBtn.addEventListener('click', handleSendOtp);
+        verifyOtpBtn.addEventListener('click', handleVerifyOtp);
+        
+        // دکمه تغییر شماره
+        changePhoneBtn.addEventListener('click', () => {
+            otpStep.style.display = 'none';
+            phoneStep.style.display = 'block';
+            loginErrorPhone.style.display = 'none';
+            loginErrorOtp.style.display = 'none';
+            phoneInput.focus();
+        });
+        // --- پایان Event Listeners لاگین ---
 
         window.addEventListener('load', async () => {
             loadTheme();
+            
+            // (اصلاح شد) اول توکن را بخوان
+            authToken = localStorage.getItem('authToken');
+            
             await checkAdminAuth(); // بررسی وضعیت ادمین
-            showTypingIndicator();
-            setTimeout(() => { removeTypingIndicator(); addTypedMessage('سلام! من مشاور شغلی «هزارجاب» هستم. برای اینکه بتونم بهتر کمکت کنم، لطفاً خودت رو کامل معرفی کن: نام، سن، جنسیت، وضعیت شغلی فعلی و رشتهٔ تحصیلی.', 'bot'); }, 1000);
+            updateLoginButton(); // وضعیت دکمه لاگین را آپدیت کن
+            
+            if (authToken) {
+                // (اصلاح شد) اگر لاگین بود، تاریخچه را واکشی کن
+                await loadAndDisplayHistory();
+
+                // --- FIX 2 (حل مشکل "ادامه بده") ---
+                // حالا که تاریخچه بارگذاری شده، بررسی کن آیا باید ادامه دهیم؟
+                pendingLoginGate = (localStorage.getItem('pendingLoginGate') === '1');
+                if (pendingLoginGate) {
+                    // فقط اگر فلگ لاگین اجباری ست شده بود، تابع ادامه را صدا بزن
+                    await continueAfterLoginIfNeeded();
+                }
+                // --- End FIX 2 ---
+
+            } else {
+                // اگر کاربر مهمان است، چت ناشناس را شروع کن
+                showTypingIndicator();
+                setTimeout(() => { 
+                    removeTypingIndicator(); 
+                    addTypedMessage('سلام! من مشاور شغلی «هزارجاب» هستم. برای اینکه بتونم بهتر کمکت کنم، لطفاً خودت رو کامل معرفی کن: نام، سن، جنسیت، وضعیت شغلی فعلی و رشتهٔ تحصیلی.', 'bot'); 
+                }, 1000);
+            }
         });
     </script>
 </body>
