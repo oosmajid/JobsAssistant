@@ -127,15 +127,10 @@ def create_tables():
 
     # conversations (جدید: پشتیبانی از کاربر مهمان و کاربر لاگین شده)
     conversations_table = """
+    -- گام ۱: جدول را با ستون‌های اصلی (که احتمالاً از قبل وجود دارند) ایجاد کن
     CREATE TABLE IF NOT EXISTS public.conversations (
         id SERIAL PRIMARY KEY,
-        
-        -- این برای کاربران لاگین شده است
         user_id INTEGER REFERENCES public.users(id) ON DELETE CASCADE, 
-        
-        -- این برای کاربران ناشناس قبل از لاگین است
-        anonymous_user_id VARCHAR(100) UNIQUE, 
-        
         conversation_history JSONB DEFAULT '[]'::jsonb,
         career_profile JSONB,
         evidence JSONB,
@@ -146,19 +141,33 @@ def create_tables():
         job_zone_justification TEXT,
         personality_paragraph TEXT,
         final_report_text TEXT,
-        report_generated TIMESTAMP,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW(),
-
-        -- اطمینان از اینکه هر چت یا به کاربر ناشناس یا به کاربر لاگین شده متصل است
-        CONSTRAINT chk_user_or_anonymous CHECK (
-            (user_id IS NOT NULL AND anonymous_user_id IS NULL) OR
-            (user_id IS NULL AND anonymous_user_id IS NOT NULL)
-        )
+        report_generated TIMESTAMP
     );
-    -- ایجاد ایندکس روی هر دو کلید خارجی برای جستجوی سریع
+    
+    -- [اصلاحیه] گام ۲: ستون‌های جدید را با ALTER TABLE اضافه کن تا اسکریپت روی دیتابیس قدیمی هم اجرا شود
+    ALTER TABLE public.conversations 
+        ADD COLUMN IF NOT EXISTS anonymous_user_id VARCHAR(100) UNIQUE,
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+    -- گام ۳: حالا که مطمئنیم ستون‌ها وجود دارند، ایندکس‌ها را بساز
     CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON public.conversations(user_id);
     CREATE INDEX IF NOT EXISTS idx_conversations_anonymous_user_id ON public.conversations(anonymous_user_id);
+
+    -- گام ۴: افزودن Constraint (محدودیت) اگر وجود نداشته باشد
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'chk_user_or_anonymous' AND conrelid = 'public.conversations'::regclass
+        ) THEN
+            ALTER TABLE public.conversations 
+            ADD CONSTRAINT chk_user_or_anonymous CHECK (
+                (user_id IS NOT NULL AND anonymous_user_id IS NULL) OR
+                (user_id IS NULL AND anonymous_user_id IS NOT NULL)
+            );
+        END IF;
+    END $$;
     """
     
     # otps (جدید: برای کدهای یکبار مصرف)
