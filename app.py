@@ -21,10 +21,10 @@ import asyncio
 import json
 import sys
 import re
+import requests
 import uuid
 import time
 import secrets
-from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory, session, redirect, render_template_string, Response
 from flask_cors import CORS
 from sqlalchemy import create_engine, text
@@ -125,6 +125,31 @@ if KAVEHNEGAR_API_KEY and KAVEHNEGAR_API_KEY != "YOUR_KAVEHNEGAR_API_KEY_HERE":
 else:
     logger.warning("KAVEHNEGAR_API_KEY not set. SMS functionality will be disabled.")
 # --- پایان تنظیمات جدید ---
+
+# --- [این بخش را اضافه کنید] ---
+# ==============================================================================
+# 6) Zarinpal & Credit Configuration
+# ==============================================================================
+ZARINPAL_MERCHANT_ID = os.getenv("ZARINPAL_MERCHANT_ID")
+SUBSCRIPTION_PRICE = os.getenv("SUBSCRIPTION_PRICE", "100000") # قیمت اصلی اشتراک (۱۰۰ هزار تومان)
+DISCOUNT_PRICE = os.getenv("DISCOUNT_PRICE", "49000") # قیمت تخفیف ۱ ساعته (۴۹ هزار تومان)
+
+# آدرس‌های API زرین‌پال
+ZARINPAL_REQUEST_URL = "https://api.zarinpal.com/pg/v4/payment/request.json"
+ZARINPAL_VERIFY_URL = "https://api.zarinpal.com/pg/v4/payment/verify.json"
+ZARINPAL_STARTPAY_URL = "https://www.zarinpal.com/pg/StartPay/"
+
+# آدرس سرور شما برای بازگشت کاربر از درگاه پرداخت
+# (مطمئن شوید که پورت 5007 با پورت اجرای برنامه شما یکی باشد)
+APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5007") 
+PAYMENT_CALLBACK_URL = f"{APP_BASE_URL}/payment/verify"
+# ---------------------------------
+
+# [جدید] خواندن مدت زمان تخفیف از .env
+try:
+    DISCOUNT_DURATION_MINUTES = int(os.getenv("DISCOUNT_DURATION_MINUTES", "20"))
+except ValueError:
+    DISCOUNT_DURATION_MINUTES = 60 # استفاده از پیش‌فرض در صورت خطا
 
 # مدل‌های موجود از متغیرهای محیطی
 AVAILABLE_MODELS_STR = os.getenv("AVAILABLE_MODELS", "models/gemini-flash-latest,models/gemini-pro-latest,models/gemini-2.0-flash,models/gemini-2.0-flash-001")
@@ -1750,6 +1775,45 @@ def chat():
             # اگر کاربر لاگین کرده، دیگر شناسه ناشناس مهم نیست
             anonymous_user_id = None 
             logger.info(f"Chat request from logged-in user: {user_id}")
+
+            # --- [جدید] منطق بررسی اعتبار برای کاربران لاگین شده ---
+            try:
+                with engine.connect() as conn:
+                    credits_data = conn.execute(
+                        text("""
+                            SELECT message_credits, subscription_expires_at 
+                            FROM public.user_credits 
+                            WHERE user_id = :uid
+                        """),
+                        {"uid": user_id}
+                    ).mappings().first()
+
+                    if not credits_data:
+                        # اگر کاربر لاگین کرده ولی ردیف اعتبار ندارد (نباید اتفاق بیفتد)
+                        logger.error(f"No credits entry found for logged-in user {user_id}. Granting 4 fallback credits.")
+                        conn.execute(
+                            text("INSERT INTO public.user_credits (user_id, message_credits) VALUES (:uid, 4) ON CONFLICT (user_id) DO NOTHING"),
+                            {"uid": user_id}
+                        )
+                        conn.commit()
+                        credits_data = {'message_credits': 4, 'subscription_expires_at': None}
+
+                    # بررسی اشتراک نامحدود
+                    is_subscribed = credits_data.get('subscription_expires_at') and credits_data['subscription_expires_at'] > datetime.now(timezone.utc)
+                    # بررسی اعتبار پیامی
+                    has_message_credits = credits_data.get('message_credits', 0) > 0
+
+                    if not is_subscribed and not has_message_credits:
+                        # --- [جدید] مسدود کردن کاربر به دلیل اتمام اعتبار ---
+                        logger.info(f"User {user_id} has no credits or subscription. Blocking chat.")
+                        # 200 OK میفرستیم، چون این یک خطای سرور نیست
+                        return jsonify({'reply_type': 'credit_limit_reached'}), 200 
+            
+            except Exception as e:
+                logger.error(f"Error checking credits for user {user_id}: {e}", exc_info=True)
+                return jsonify({'reply': 'خطا در بررسی اعتبار شما.'}), 500
+            # --- پایان منطق بررسی اعتبار ---
+
         except jwt.ExpiredSignatureError:
             return jsonify({'reply_type': 'error', 'reply': 'Token منقضی شده. لطفاً دوباره لاگین کنید.', 'token_expired': True}), 401
         except Exception as e:
@@ -1789,6 +1853,26 @@ def chat():
         # اگر شناسه ناشناس جدیدی ساخته شده، آن را برگردان
         if 'new_anonymous_user_id' in response_data:
             anonymous_user_id = response_data['new_anonymous_user_id']
+
+        # --- [جدید] کسر اعتبار پس از پاسخ موفق ---
+        # (فقط اگر کاربر لاگین بود و خطایی رخ نداده بود)
+        if user_id and response_data.get('reply_type', 'standard') == 'standard':
+            with engine.connect() as conn:
+                # چک کن آیا اشتراک نامحدود دارد یا نه
+                is_subscribed = conn.execute(
+                    text("SELECT 1 FROM public.user_credits WHERE user_id = :uid AND subscription_expires_at > NOW()"),
+                    {"uid": user_id}
+                ).scalar_one_or_none()
+                
+                if not is_subscribed:
+                    # اگر اشتراک نداشت، یک اعتبار کم کن
+                    conn.execute(
+                        text("UPDATE public.user_credits SET message_credits = message_credits - 1 WHERE user_id = :uid AND message_credits > 0"),
+                        {"uid": user_id}
+                    )
+                    conn.commit()
+                    logger.info(f"Deducted 1 message credit from user {user_id}")
+        # --- پایان بخش کسر اعتبار ---
 
         return jsonify({**response_data, 'anonymous_user_id': anonymous_user_id})
     
@@ -2060,11 +2144,11 @@ def api_send_otp():
         code = str(random.randint(100000, 999999))
         try:
             # الگو (template) خود در کاوه‌نگار را اینجا بگذارید
-            # response = kaveh_api.verify_lookup({'receptor': phone_number, 'token': code, 'template': 'YourTemplateName'})
-            # logger.info(f"OTP Sent. Receptor: {phone_number}, Response: {response}")
+            response = kaveh_api.verify_lookup({'receptor': phone_number, 'token': code, 'template': 'verify-otp'})
+            logger.info(f"OTP Sent. Receptor: {phone_number}, Response: {response}")
             
             # حالت شبیه‌سازی (برای تست بدون ارسال واقعی)
-            logger.info(f"!!! SIMULATING Kavehnegar Send. Phone: {phone_number}, Code: {code} !!!")
+            #logger.info(f"!!! SIMULATING Kavehnegar Send. Phone: {phone_number}, Code: {code} !!!")
             
         except Exception as e:
             logger.error(f"Kavenegar API error: {e}")
@@ -2134,15 +2218,56 @@ def api_verify_otp():
                 {"phone": phone_number}
             ).scalar_one_or_none()
             
+            referral_code = data.get('referral_code') # خواندن کد معرف از درخواست
+
             if not user_id:
-                # ثبت نام کاربر جدید
+                # --- ثبت نام کاربر جدید ---
                 user_id = conn.execute(
                     text("INSERT INTO public.users (phone_number) VALUES (:phone) RETURNING id"),
                     {"phone": phone_number}
                 ).scalar_one()
                 logger.info(f"New user created. Phone: {phone_number}, UserID: {user_id}")
+
+                # --- [جدید] اعطای 4 اعتبار پیام رایگان به کاربر جدید ---
+                conn.execute(
+                    text("INSERT INTO public.user_credits (user_id, message_credits) VALUES (:uid, 4)"),
+                    {"uid": user_id}
+                )
+                logger.info(f"Granted 4 initial credits to new user {user_id}")
+
+                # --- [جدید] بررسی و اعمال کد معرف ---
+                if referral_code:
+                    # 1. کد معرف را پیدا کن (کدی که استفاده نشده باشد)
+                    referral_entry = conn.execute(
+                        text("SELECT id, referrer_user_id FROM public.referrals WHERE referral_code = :code AND referred_user_id IS NULL"),
+                        {"code": referral_code}
+                    ).mappings().first()
+                    
+                    if referral_entry:
+                        referrer_id = referral_entry['referrer_user_id']
+                        # 2. کد را به نام کاربر جدید ثبت کن (تا دوباره استفاده نشود)
+                        conn.execute(
+                            text("UPDATE public.referrals SET referred_user_id = :new_user_id, credited_at = NOW() WHERE id = :ref_id"),
+                            {"new_user_id": user_id, "ref_id": referral_entry['id']}
+                        )
+                        # 3. به صاحب کد (معرف) 20 اعتبار پاداش بده
+                        conn.execute(
+                            text("UPDATE public.user_credits SET message_credits = message_credits + 20 WHERE user_id = :referrer_id"),
+                            {"referrer_id": referrer_id}
+                        )
+                        logger.info(f"Referral code {referral_code} applied. Granted 20 credits to referrer {referrer_id}.")
+                    else:
+                        logger.warning(f"Invalid or already used referral code {referral_code} attempted by new user {user_id}.")
+                # --- پایان بخش کد معرف ---
+
             else:
+                # --- کاربر لاگین کرد (ثبت نام جدید نبود) ---
                 logger.info(f"User logged in. Phone: {phone_number}, UserID: {user_id}")
+                # (اختیاری) مطمئن شو اگر قبلاً ردیف اعتبار نداشته، الان بگیرد
+                conn.execute(
+                    text("INSERT INTO public.user_credits (user_id, message_credits) VALUES (:uid, 0) ON CONFLICT (user_id) DO NOTHING"),
+                    {"uid": user_id}
+                )
             
             # ۳. (مهم) انتقال چت‌های ناشناس (منطق اصلاح شده برای مشکل 2)
             if anonymous_user_id:
@@ -2277,7 +2402,424 @@ def admin_view_chat(conversation_id):
             )
     except Exception as e:
         logger.error(f"Error in admin_view_chat: {e}", exc_info=True)
-        return "خطای سرور در بارگذاری چت", 500        
+        return "خطای سرور در بارگذاری چت", 500
+
+
+# ==============================================================================
+# 11) Credit & Payment API Endpoints
+# ==============================================================================
+
+@app.route('/api/get-referral-link', methods=['POST'])
+@token_required
+def get_referral_link(current_user_id):
+    """
+    لینک معرف منحصر به فرد کاربر را ایجاد یا بازیابی می‌کند.
+    """
+    try:
+        with engine.connect() as conn:
+            # 1. چک کن آیا کاربر از قبل کد فعال دارد
+            code = conn.execute(
+                text("SELECT referral_code FROM public.referrals WHERE referrer_user_id = :uid"),
+                {"uid": current_user_id}
+            ).scalar_one_or_none()
+            
+            if not code:
+                # 2. اگر نداشت، یک کد جدید بساز
+                code = str(uuid.uuid4()) # استفاده از uuid
+                conn.execute(
+                    text("INSERT INTO public.referrals (referrer_user_id, referral_code) VALUES (:uid, :code)"),
+                    {"uid": current_user_id, "code": code}
+                )
+                conn.commit()
+                logger.info(f"Generated new referral code for user {current_user_id}")
+            
+            # 3. لینک کامل را برگردان
+            referral_link = f"{APP_BASE_URL}/?ref={code}"
+            return jsonify({'success': True, 'referral_link': referral_link})
+            
+    except Exception as e:
+        logger.error(f"Error getting referral link for user {current_user_id}: {e}", exc_info=True)
+        return jsonify({'error': 'خطا در ساخت لینک معرف'}), 500
+
+# --- [جدید] API برای اطلاع‌رسانی قیمت به فرانت‌اند ---
+@app.route('/api/get-subscription-price', methods=['GET'])
+@token_required
+def get_subscription_price(current_user_id):
+    """
+    [اصلاح شده]
+    بررسی می‌کند کاربر شامل تخفیف می‌شود یا نه.
+    اگر تایمر تخفیف قبلاً شروع نشده، آن را همین لحظه شروع می‌کند.
+    """
+    try:
+        with engine.connect() as conn:
+            # [اصلاح شد] به جای جدول users، از user_credits بخوان
+            timer_start_time = conn.execute(
+                text("SELECT discount_timer_started_at FROM public.user_credits WHERE user_id = :uid"),
+                {"uid": current_user_id}
+            ).scalar_one_or_none()
+
+            if not timer_start_time:
+                # [جدید] اگر تایمر هرگز شروع نشده، همین الان آن را ست کن
+                logger.info(f"Discount timer not set for user {current_user_id}. Starting it now.")
+                timer_start_time = conn.execute(
+                    text("""
+                        UPDATE public.user_credits 
+                        SET discount_timer_started_at = NOW() 
+                        WHERE user_id = :uid
+                        RETURNING discount_timer_started_at
+                    """),
+                    {"uid": current_user_id}
+                ).scalar_one()
+                conn.commit()
+
+            # [اصلاح شد] مقایسه با زمان شروع تایمر (نه زمان ثبت نام)
+            # (از utcnow() استفاده می‌کنیم چون ستون ما TIMESTAMPTZ است)
+            time_since_start = datetime.now(timezone.utc) - timer_start_time
+
+            # زمان تخفیf خود را اینجا تنظیم کنید (مثلاً 1 ساعت یا 1 روز)
+            discount_duration = timedelta(minutes=DISCOUNT_DURATION_MINUTES) 
+
+            if time_since_start < discount_duration:
+                # --- شامل تخفیf می‌شود ---
+                discount_ends_at = timer_start_time + discount_duration
+                return jsonify({
+                    "price": int(DISCOUNT_PRICE),
+                    "original_price": int(SUBSCRIPTION_PRICE),
+                    "is_discounted": True,
+                    "discount_ends_at": discount_ends_at.isoformat()
+                })
+            else:
+                # --- تخفیf تمام شده ---
+                return jsonify({
+                    "price": int(SUBSCRIPTION_PRICE),
+                    "original_price": int(SUBSCRIPTION_PRICE),
+                    "is_discounted": False
+                })
+
+    except Exception as e:
+        logger.error(f"Error getting subscription price for user {current_user_id}: {e}", exc_info=True)
+        return jsonify({'error': 'خطا در دریافت اطلاعات قیمت'}), 500
+
+@app.route('/api/create-payment-request', methods=['POST'])
+@token_required
+def create_payment_request(current_user_id):
+    """
+    یک درخواست پرداخت در زرین‌پال ایجاد کرده و کاربر را به درگاه هدایت می‌کند.
+    [جدید] قیمت را بر اساس زمان ثبت نام کاربر (تخفیف ۱ ساعته) محاسبه می‌کند.
+    """
+    try:
+        with engine.connect() as conn:
+            # --- [جدید] منطق محاسبه قیمت ---
+            user_data = conn.execute(
+            text("""
+                SELECT u.phone_number, c.discount_timer_started_at 
+                FROM public.users u
+                LEFT JOIN public.user_credits c ON u.id = c.user_id
+                WHERE u.id = :uid
+            """),
+            {"uid": current_user_id}
+        ).mappings().first()
+
+        if not user_data:
+             return jsonify({'error': 'کاربر یافت نشد'}), 404
+
+        phone = user_data['phone_number'] or f"user_{current_user_id}"
+        timer_start_time = user_data['discount_timer_started_at'] # [اصلاح شد]
+
+        is_discounted = False
+        if timer_start_time: # [اصلاح شد]
+            # [اصلاح شد] مقایسه با زمان شروع تایمر
+            # (از utcnow() استفاده می‌کنیم چون ستون ما TIMESTAMPTZ است)
+            time_since_start = datetime.now(timezone.utc) - timer_start_time
+
+            # زمان تخفیf خود را اینجا تنظیم کنید (باید با تابع قبلی یکی باشد)
+            discount_duration = timedelta(minutes=DISCOUNT_DURATION_MINUTES)
+
+            if time_since_start < discount_duration:
+                is_discounted = True
+            
+            final_amount = int(DISCOUNT_PRICE) if is_discounted else int(SUBSCRIPTION_PRICE)
+            description = f"اشتراک ۱ روزه (تخفیف ویژه)" if is_discounted else f"اشتراک ۱ روزه"
+            # --- پایان منطق قیمت ---
+
+            # 1. یک رکورد پرداخت در حالت PENDING ایجاد کنید
+            temp_authority = str(uuid.uuid4())
+            payment_record = conn.execute(
+                text("""
+                    INSERT INTO public.payments (user_id, amount, authority, status) 
+                    VALUES (:uid, :amount, :auth, 'PENDING')
+                    RETURNING id
+                """),
+                {"uid": current_user_id, "amount": final_amount, "auth": temp_authority} # [اصلاح شد]
+            ).mappings().first()
+            payment_id = payment_record['id']
+
+            # 2. آماده‌سازی درخواست برای زرین‌پال
+            payload = {
+                "merchant_id": ZARINPAL_MERCHANT_ID,
+                "amount": final_amount* 10, # [اصلاح شد]
+                "callback_url": PAYMENT_CALLBACK_URL,
+                "description": f"{description} - {phone}", # [اصلاح شد]
+                "metadata": {"user_id": current_user_id, "payment_id": payment_id}
+            }
+
+            # 3. تماس با API زرین‌پال
+            headers = {"Content-Type": "application/json", "Accept": "application/json"}
+            response = requests.post(ZARINPAL_REQUEST_URL, data=json.dumps(payload), headers=headers, timeout=10)
+            response.raise_for_status() # پرتاب خطا در صورت 4xx/5xx
+            
+            response_data = response.json()
+            
+            if response_data.get("data", {}).get("code") == 100:
+                # 4. درخواست موفق بود
+                zarinpal_authority = response_data['data']['authority']
+                payment_url = f"{ZARINPAL_STARTPAY_URL}{zarinpal_authority}"
+                
+                # 5. رکورد دیتابیس را با Authority واقعی زرین‌پال آپدیت کنید
+                conn.execute(
+                    text("UPDATE public.payments SET authority = :auth WHERE id = :pid"),
+                    {"auth": zarinpal_authority, "pid": payment_id}
+                )
+                conn.commit()
+                
+                logger.info(f"Zarinpal payment request created for user {current_user_id}. Amount: {final_amount}, Authority: {zarinpal_authority}")
+                return jsonify({'success': True, 'payment_url': payment_url})
+            else:
+                # زرین‌پال خطا برگرداند
+                error_code = response_data.get("errors", {}).get("code", "unknown")
+                error_message = response_data.get("errors", {}).get("message", "خطای نامشخص از زرین‌پال")
+                logger.error(f"Zarinpal request error for user {current_user_id}. Code: {error_code}, Msg: {error_message}")
+                # ردیف پرداخت PENDING را پاک کنید
+                conn.execute(text("DELETE FROM public.payments WHERE id = :pid"), {"pid": payment_id})
+                conn.commit()
+                return jsonify({'error': f'خطای درگاه پرداخت: {error_message} (کد: {error_code})'}), 500
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Zarinpal request failed: {e}", exc_info=True)
+        return jsonify({'error': 'خطا در ارتباط با درگاه پرداخت.'}), 500
+    except Exception as e:
+        logger.error(f"Error creating payment request for user {current_user_id}: {e}", exc_info=True)
+        return jsonify({'error': 'خطای داخلی سرور در ایجاد پرداخت'}), 500
+
+@app.route('/payment/verify', methods=['GET'])
+def verify_payment():
+    """
+    این اندپوینت Callback زرین‌پال است.
+    پرداخت را تایید نهایی (Verify) کرده و اشتراک را فعال می‌کند.
+    """
+    authority = request.args.get('Authority')
+    status = request.args.get('Status')
+    
+    # URL هایی که کاربر به آن‌ها هدایت می‌شود. شما باید این صفحات را در فرانت بسازید.
+    # فعلاً آن‌ها را به صفحه اصلی هدایت می‌کنیم با یک پارامتر
+    success_url = f"{APP_BASE_URL}/?payment=success"
+    failed_url = f"{APP_BASE_URL}/?payment=failed"
+
+    if not authority or not status:
+        logger.warning("Invalid payment callback. Missing Authority or Status.")
+        return redirect(failed_url)
+
+    try:
+        with engine.connect() as conn:
+            # 1. رکورد پرداخت را بر اساس Authority پیدا کنید
+            payment = conn.execute(
+                text("SELECT id, user_id, amount FROM public.payments WHERE authority = :auth AND status = 'PENDING'"),
+                {"auth": authority}
+            ).mappings().first()
+
+            if not payment:
+                logger.warning(f"Payment not found or already processed. Authority: {authority}")
+                # چک کن آیا قبلاً تایید شده؟
+                verified = conn.execute(text("SELECT 1 FROM public.payments WHERE authority = :auth AND status = 'COMPLETED'"), {"auth": authority}).scalar_one_or_none()
+                return redirect(success_url if verified else failed_url)
+
+            if status == "NOK":
+                # پرداخت ناموفق بود یا توسط کاربر لغو شد
+                conn.execute(
+                    text("UPDATE public.payments SET status = 'FAILED' WHERE id = :pid"),
+                    {"pid": payment['id']}
+                )
+                conn.commit()
+                logger.info(f"Payment failed by user. Authority: {authority}")
+                return redirect(failed_url)
+
+            if status == "OK":
+                # 2. پرداخت در ظاهر موفق بوده، حالا باید با زرین‌پال تایید (Verify) شود
+                payload = {
+                    "merchant_id": ZARINPAL_MERCHANT_ID,
+                    "amount": payment['amount']* 10,
+                    "authority": authority
+                }
+                response = requests.post(ZARINPAL_VERIFY_URL, data=json.dumps(payload), headers={"Content-Type": "application/json"}, timeout=10)
+                response.raise_for_status()
+                response_data = response.json()
+                
+                if response_data.get("data", {}).get("code") == 100:
+                    # 3. --- پرداخت موفقیت‌آمیز و تایید شده! ---
+                    logger.info(f"Payment SUCCESSFUL. Authority: {authority}, User: {payment['user_id']}")
+                    
+                    # 4. وضعیت پرداخت را در DB آپدیت کنید
+                    conn.execute(
+                        text("UPDATE public.payments SET status = 'COMPLETED', verified_at = NOW() WHERE id = :pid"),
+                        {"pid": payment['id']}
+                    )
+                    # 5. اشتراک 3 روزه را برای کاربر فعال کنید
+                    conn.execute(
+                        text("""
+                            UPDATE public.user_credits 
+                            SET subscription_expires_at = (NOW() + INTERVAL '1 days')
+                            WHERE user_id = :uid
+                        """),
+                        {"uid": payment['user_id']}
+                    )
+                    conn.commit()
+                    return redirect(success_url)
+                
+                else:
+                    # 6. تاییدیه زرین‌پال ناموفق بود
+                    error_code = response_data.get("errors", {}).get("code", "verify_failed")
+                    logger.error(f"Zarinpal verification FAILED. Authority: {authority}, Code: {error_code}")
+                    conn.execute(
+                        text("UPDATE public.payments SET status = 'FAILED' WHERE id = :pid"),
+                        {"pid": payment['id']}
+                    )
+                    conn.commit()
+                    return redirect(failed_url)
+
+    except Exception as e:
+        logger.error(f"CRITICAL error in payment verification: {e}", exc_info=True)
+        return redirect(failed_url)
+
+
+# ==============================================================================
+# 12) Admin Credit Management Endpoints
+# ==============================================================================
+
+@app.route('/admin/credits')
+@require_admin_auth
+def serve_admin_credits():
+    """
+    صفحه HTML مدیریت اعتبار کاربران را نمایش می‌دهد.
+    """
+    return send_from_directory('.', 'admin-credits.html')
+
+
+@app.route('/admin/get-user-credits', methods=['POST'])
+@require_admin_auth
+def admin_get_user_credits():
+    """
+    اطلاعات اعتبار کاربر را بر اساس شماره موبایل جستجو می‌کند.
+    """
+    try:
+        data = request.json
+        phone_raw = data.get('phone_number')
+        phone = normalize_phone(phone_raw)
+        
+        if not phone:
+            return jsonify({'error': 'فرمت شماره موبایل اشتباه است'}), 400
+        
+        with engine.connect() as conn:
+            # 1. پیدا کردن کاربر
+            user = conn.execute(
+                text("SELECT id, first_name, phone_number FROM public.users WHERE phone_number = :phone"),
+                {"phone": phone}
+            ).mappings().first()
+            
+            if not user:
+                return jsonify({'error': 'کاربری با این شماره یافت نشد'}), 404
+            
+            # 2. پیدا کردن اعتبار کاربر
+            credits = conn.execute(
+                text("SELECT message_credits, subscription_expires_at FROM public.user_credits WHERE user_id = :uid"),
+                {"uid": user['id']}
+            ).mappings().first()
+            
+            if not credits:
+                # اگر کاربر وجود دارد ولی اعتبار ندارد (نباید اتفاق بیفتد)، یکی برایش بساز
+                conn.execute(
+                    text("INSERT INTO public.user_credits (user_id, message_credits) VALUES (:uid, 0)"),
+                    {"uid": user['id']}
+                )
+                conn.commit()
+                credits = {'message_credits': 0, 'subscription_expires_at': None}
+
+            return jsonify({
+                "user_id": user['id'],
+                "first_name": user['first_name'],
+                "phone_number": user['phone_number'],
+                "message_credits": credits['message_credits'],
+                "subscription_expires_at": credits['subscription_expires_at'].isoformat() if credits['subscription_expires_at'] else None
+            })
+
+    except Exception as e:
+        logger.error(f"Error in admin_get_user_credits: {e}", exc_info=True)
+        return jsonify({'error': 'خطای داخلی سرور'}), 500
+
+
+@app.route('/admin/set-user-credits', methods=['POST'])
+@require_admin_auth
+def admin_set_user_credits():
+    """
+    اعتبار پیام و/یا اشتراک کاربر را آپدیت می‌کند.
+    """
+    try:
+        data = request.json
+        user_id = data.get('user_id')
+        new_messages = data.get('new_messages') # می‌تواند null باشد
+        add_days = data.get('add_days')       # می‌تواند null باشد
+        
+        if not user_id:
+            return jsonify({'error': 'user_id الزامی است'}), 400
+        
+        # اطمینان از اینکه ورودی‌ها عددی هستند (اگر null نیستند)
+        try:
+            if new_messages is not None:
+                new_messages = int(new_messages)
+            if add_days is not None:
+                add_days = int(add_days)
+        except ValueError:
+            return jsonify({'error': 'مقادیر باید عددی باشند'}), 400
+            
+        with engine.connect() as conn:
+            set_clauses = []
+            params = {"uid": user_id}
+            
+            # 1. منطق آپدیت اعتبار پیام
+            if new_messages is not None:
+                set_clauses.append("message_credits = :messages")
+                params["messages"] = new_messages
+            
+            # 2. منطق آپدیت اشتراک
+            if add_days is not None:
+                # این SQL هوشمند است:
+                # 1. اگر اشتراک فعال دارد (در آینده)، به آن اضافه می‌کند.
+                # 2. اگر اشتراک ندارد (یا منقضی شده)، از "امروز" حساب می‌کند.
+                set_clauses.append("""
+                    subscription_expires_at = (
+                        CASE 
+                            WHEN subscription_expires_at > NOW() 
+                            THEN subscription_expires_at 
+                            ELSE NOW() 
+                        END
+                    ) + (INTERVAL '1 day' * :days)
+                """)
+                params["days"] = add_days
+            
+            if not set_clauses:
+                return jsonify({'error': 'هیچ مقداری برای آپدیت ارسال نشد'}), 400
+
+            # 3. اجرای کوئری نهایی
+            query = f"UPDATE public.user_credits SET {', '.join(set_clauses)} WHERE user_id = :uid"
+            conn.execute(text(query), params)
+            conn.commit()
+            
+            logger.info(f"Admin updated credits for user {user_id}. Payload: {data}")
+            return jsonify({'success': True, 'message': 'اعتبار کاربر با موفقیت آپدیت شد.'})
+
+    except Exception as e:
+        logger.error(f"Error in admin_set_user_credits: {e}", exc_info=True)
+        return jsonify({'error': 'خطای داخلی سرور هنگام آپدیت'}), 500
+
 # ==============================================================================
 # Main Application Routes
 # ==============================================================================

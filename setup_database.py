@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Job Assistant - Database Bootstrap (v2 - with OTP Login)
+Job Assistant - Database Bootstrap (v3 - with Credits & Payments)
 ==================================================
 
 - Creates DB (if missing)
@@ -13,6 +13,9 @@ Job Assistant - Database Bootstrap (v2 - with OTP Login)
     • prompts
     • settings
     • shared_chats
+    • [NEW] user_credits (manages message credits and subscriptions)
+    • [NEW] referrals (manages referral codes)
+    • [NEW] payments (manages payment transactions)
 - Seeds minimal settings/prompts
 """
 
@@ -108,7 +111,7 @@ def create_extensions():
         return False
 
 # ------------------------------------------------------------------------------
-# 3) Tables (v2 Schema)
+# 3) Tables (v3 Schema)
 # ------------------------------------------------------------------------------
 def create_tables():
     # users (جدید: مبتنی بر شماره موبایل)
@@ -117,8 +120,8 @@ def create_tables():
         id SERIAL PRIMARY KEY,
         phone_number VARCHAR(20) UNIQUE NOT NULL,
         first_name VARCHAR(100),
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
     );
     """
 
@@ -204,6 +207,65 @@ def create_tables():
     );
     """
 
+    # --- [جدید] جدول اعتبار کاربران ---
+    user_credits_table = """
+    CREATE TABLE IF NOT EXISTS public.user_credits (
+        id SERIAL PRIMARY KEY,
+        -- اتصال یک به یک به کاربر
+        user_id INTEGER UNIQUE NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+        -- تعداد پیام‌های رایگان باقیمانده
+        message_credits INTEGER NOT NULL DEFAULT 4,
+        -- تاریخ انقضای اشتراک (برای چت نامحدود)
+        subscription_expires_at TIMESTAMP
+        -- ستون جدید در دستور ALTER TABLE اضافه می‌شود
+    );
+
+    -- [اصلاح شد] این دستور ستون جدید را به جدول موجود اضافه می‌کند 
+    -- (و اگر از قبل وجود داشته باشد، خطا نمی‌دهد)
+    ALTER TABLE public.user_credits ADD COLUMN IF NOT EXISTS discount_timer_started_at TIMESTAMPTZ;
+
+    -- ایندکس برای جستجوی سریع اعتبار کاربر
+    CREATE INDEX IF NOT EXISTS idx_user_credits_user_id ON public.user_credits(user_id);
+    """
+
+    # --- [جدید] جدول کدهای معرف ---
+    referrals_table = """
+    CREATE TABLE IF NOT EXISTS public.referrals (
+        id SERIAL PRIMARY KEY,
+        -- کاربری که لینک را ساخته
+        referrer_user_id INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+        -- کد منحصر به فرد معرف
+        referral_code VARCHAR(100) UNIQUE NOT NULL,
+        -- کاربری که با لینک ثبت نام کرده
+        referred_user_id INTEGER REFERENCES public.users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        -- زمانی که اعتبار به صاحب کد داده شد
+        credited_at TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_referrals_referrer_id ON public.referrals(referrer_user_id);
+    CREATE INDEX IF NOT EXISTS idx_referrals_code ON public.referrals(referral_code);
+    """
+
+    # --- [جدید] جدول سوابق پرداخت ---
+    payments_table = """
+    CREATE TABLE IF NOT EXISTS public.payments (
+        id SERIAL PRIMARY KEY,
+        -- کاربری که پرداخت را انجام داده
+        user_id INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+        -- مبلغ (به ریال یا تومان، بر اساس درگاه)
+        amount INTEGER NOT NULL,
+        -- کد رهگیری از زرین پال
+        authority VARCHAR(100) NOT NULL,
+        -- وضعیت تراکنش
+        status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+        created_at TIMESTAMP DEFAULT NOW(),
+        -- زمانی که پرداخت با موفقیت تایید شد
+        verified_at TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_payments_user_id ON public.payments(user_id);
+    CREATE INDEX IF NOT EXISTS idx_payments_authority ON public.payments(authority);
+    """
+
     stmts = [
         ("users", users_table),
         ("conversations", conversations_table),
@@ -211,6 +273,10 @@ def create_tables():
         ("prompts", prompts_table),
         ("settings", settings_table),
         ("shared_chats", shared_chats_table),
+        # --- [جدید] افزودن جداول جدید به لیست اجرا ---
+        ("user_credits", user_credits_table),
+        ("referrals", referrals_table),
+        ("payments", payments_table),
     ]
 
     try:
@@ -243,11 +309,15 @@ def insert_initial_data():
         ("KAVEHNEGAR_API_KEY", os.getenv("KAVEHNEGAR_API_KEY", "YOUR_API_KEY")),
         ("MAX_CONVERSATION_LENGTH", os.getenv("MAX_CONVERSATION_LENGTH", "100")),
         ("SESSION_TIMEOUT", os.getenv("SESSION_TIMEOUT", "3600")),
+        # --- [جدید] تنظیمات مربوط به پرداخت (می‌توانید بعداً از پنل ادمین تغییر دهید) ---
+        ("ZARINPAL_MERCHANT_ID", os.getenv("ZARINPAL_MERCHANT_ID", "YOUR_MERCHANT_ID")),
+        ("SUBSCRIPTION_PRICE", os.getenv("SUBSCRIPTION_PRICE", "100000")), # قیمت اصلی (۱۰۰ هزار تومان)
+        ("DISCOUNT_PRICE", os.getenv("DISCOUNT_PRICE", "49000")), # قیمت تخفیف (۴۹ هزار تومان)
     ]
 
     initial_prompts = [
         ("COUNSELOR_MANIFESTO", "شما یک مشاور شغلی حرفه‌ای هستید که به کاربران کمک می‌کنید تا مسیر شغلی مناسب خود را پیدا کنند."),
-        ("PERSONALITY_PARAGAGRAPH_PROMPT", "بر اساس پروفایل شغلی زیر، یک پاراگراف شخصیت‌شناسی بنویسید."),
+        ("PERSONALITY_PARAGRAPH_PROMPT", "بر اساس پروفایل شغلی زیر، یک پاراگراف شخصیت‌شناسی بنویسید."),
         ("SYSTEM_ERROR_MESSAGE", "متاسفانه خطایی در سیستم رخ داده است. لطفاً دوباره تلاش کنید."),
         ("UNEXPECTED_ERROR_MESSAGE", "خطای غیرمنتظره‌ای رخ داده است."),
         ("ANALYSIS_START_MESSAGE", "تحلیل اطلاعات شما شروع شد. لطفاً صبر کنید..."),
@@ -312,8 +382,13 @@ def verify_setup():
     try:
         engine = _engine(PROJECT_DSN)
         with engine.connect() as conn:
-            # 'jobs' از لیست بررسی حذف شد چون در اسکریپت شما تعریف نشده بود
-            for tbl in ["users","conversations","prompts","settings","shared_chats","otps"]:
+            # --- [جدید] افزودن جداول جدید به لیست بررسی ---
+            tables_to_check = [
+                "users", "conversations", "prompts", "settings", 
+                "shared_chats", "otps", "user_credits", "referrals", "payments"
+            ]
+            
+            for tbl in tables_to_check:
                 try:
                     cnt = conn.execute(text(f"SELECT COUNT(*) FROM public.{tbl}")).scalar()
                     log.info(f"✅ {tbl}: {cnt} rows")
@@ -334,12 +409,12 @@ def verify_setup():
 # Main
 # ------------------------------------------------------------------------------
 def main():
-    log.info("🚀 DB bootstrap started (v2 Schema with Login)")
+    log.info("🚀 DB bootstrap started (v3 Schema with Credits)")
     
     # اخطار مهم قبل از شروع
     log.warning("="*60)
     log.warning("!!! هشدار !!!")
-    log.warning("این اسکریپت ساختار دیتابیس را برای پشتیبانی از لاگین تغییر می‌دهد.")
+    log.warning("این اسکریپت جداول اعتباردهی (Credits, Referrals, Payments) را اضافه می‌کند.")
     log.warning(f"دیتابیس هدف: {DB_NAME} روی {DB_HOST}")
     log.warning("اگر دیتابیس فعلی شما حاوی اطلاعات است، اکیداً توصیه می‌شود ابتدا یک نسخه پشتیبان تهیه کنید.")
     log.warning("="*60)

@@ -10,524 +10,538 @@
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        /* CSS Variables for easier theming */
+        :root {
+            --font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            
+            /* Light Mode */
+            --body-bg-light: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            --chat-bg-light: rgba(255, 255, 255, 0.6);
+            --header-border-light: rgba(0, 0, 0, 0.08);
+            --text-color-light: #1a1a1a;
+            --text-color-secondary-light: #555;
+            --input-bg-light: rgba(255, 255, 255, 0.7);
+            --input-border-light: rgba(0, 0, 0, 0.1);
+            --input-focus-border-light: #007bff;
+            --btn-bg-light: rgba(255, 255, 255, 0.7);
+            --btn-border-light: rgba(0, 0, 0, 0.1);
+            --btn-hover-bg-light: rgba(255, 255, 255, 1);
+            --bot-message-bg-light: rgba(255, 255, 255, 0.9);
+            --user-message-bg-light: #007bff;
+            --modal-bg-light: rgba(255, 255, 255, 0.9);
+            --modal-header-bg-light: rgba(0, 0, 0, 0.03);
+
+            /* Dark Mode */
+            --body-bg-dark: linear-gradient(135deg, #232526 0%, #414345 100%);
+            --chat-bg-dark: rgba(30, 30, 30, 0.6);
+            --header-border-dark: rgba(255, 255, 255, 0.1);
+            --text-color-dark: #f0f0f0;
+            --text-color-secondary-dark: #aaa;
+            --input-bg-dark: rgba(0, 0, 0, 0.3);
+            --input-border-dark: rgba(255, 255, 255, 0.15);
+            --input-focus-border-dark: #007bff;
+            --btn-bg-dark: rgba(0, 0, 0, 0.3);
+            --btn-border-dark: rgba(255, 255, 255, 0.15);
+            --btn-hover-bg-dark: rgba(0, 0, 0, 0.5);
+            --bot-message-bg-dark: #2d2d2d;
+            --user-message-bg-dark: #007bff;
+            --modal-bg-dark: rgba(40, 40, 40, 0.9);
+            --modal-header-bg-dark: rgba(255, 255, 255, 0.05);
+        }
+
+        /* General Styles */
         body {
-            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
-            background-color: #f8f9fa;
+            font-family: var(--font-family);
+            background: var(--body-bg-light);
             margin: 0;
             height: 100vh;
+            height: 100dvh; /* Dynamic viewport height */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            transition: background 0.3s ease;
+        }
+
+        body.dark-mode {
+            background: var(--body-bg-dark);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { display: none; }
+        * { scrollbar-width: none; -ms-overflow-style: none; }
+
+        /* Main Chat Container (Glassmorphism) */
+        .chat-container {
+            width: 100%;
+            height: 100%;
+            max-width: 1000px; /* Max width for desktop */
+            max-height: 95vh; /* Max height for desktop */
             display: flex;
             flex-direction: column;
-            overflow-x: hidden;
-            transition: background-color 0.3s ease, color 0.3s ease;
+            background: var(--chat-bg-light);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            overflow: hidden;
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+
+        body.dark-mode .chat-container {
+            background: var(--chat-bg-dark);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
         }
         
-        /* Dark mode styles */
-        body.dark-mode {
-            background-color: #1a1a1a;
-            color: #ffffff;
+        /* Mobile Fullscreen */
+        @media (max-width: 768px) {
+            .chat-container {
+                max-height: 100vh;
+                max-height: 100dvh;
+                border-radius: 0;
+                border: none;
+            }
+        }
+
+        /* Chat Header */
+        .chat-header {
+            padding: 15px 25px;
+            border-bottom: 1px solid var(--header-border-light);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+            transition: border-color 0.3s ease, color 0.3s ease;
+        }
+
+        .chat-header-title {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: var(--text-color-light);
+        }
+
+        .header-buttons {
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
         
         body.dark-mode .chat-header {
-            background-color: #2d2d2d;
-            color: #ffffff;
-            border-bottom-color: #404040;
+            border-bottom: 1px solid var(--header-border-dark);
         }
-        
-        body.dark-mode .chat-messages {
-            background-color: #1a1a1a;
-        }
-        
-        body.dark-mode .chat-input {
-            background-color: #2d2d2d;
-            border-top-color: #404040;
-        }
-        
-        body.dark-mode #user-input {
-            background-color: #404040;
-            color: #ffffff;
-            border-color: #555555;
-        }
-        
-        body.dark-mode #user-input:focus {
-            border-color: #007bff;
-        }
-        
-        body.dark-mode .user-message {
-            background-color: #007bff;
-            color: white;
-        }
-        
-        body.dark-mode .bot-message {
-            background-color: #404040;
-            color: #ffffff;
-        }
-        
-        body.dark-mode .chat-input button {
-            color: #ffffff;
-        }
-        
-        body.dark-mode .chat-input button:hover {
-            color: #cccccc;
-        }
-        
-        body.dark-mode .chat-input button:disabled {
-            color: #666666;
-        }
-        
-        /* مخفی کردن اسکرول‌بار در همه مرورگرها */
-        ::-webkit-scrollbar {
-            display: none;
-        }
-        
-        * {
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-        }
-        .chat-header {
-            background-color: #fff;
-            color: #333;
-            padding: 15px 25px;
-            font-size: 1.1em;
-            font-weight: bold;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #e9ecef;
-            flex-shrink: 0;
-        }
-        
-        .chat-header-content {
-            max-width: 900px;
-            margin: 0 auto;
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0 20px;
-        }
-        
-        .header-right {
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        body.dark-mode .chat-header-title {
+            color: var(--text-color-dark);
         }
 
-        .quick-test-button {
-            background-color: #28a745;
-            color: white;
-            border: 1px solid #28a745;
-            padding: 8px 16px;
-            border-radius: 8px;
+        /* Header Buttons */
+        .header-btn, .test-btn {
+            background: var(--btn-bg-light);
+            color: var(--text-color-secondary-light);
+            border: 1px solid var(--btn-border-light);
+            padding: 8px 12px;
+            border-radius: 10px;
             cursor: pointer;
             font-size: 0.9em;
-            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            font-family: var(--font-family);
             transition: all 0.2s;
-            display: none;
+            display: flex;
+            align-items: center;
+            gap: 5px;
         }
-
-        .quick-test-button.show {
-            display: block;
-        }
-
-        .quick-test-button:hover {
-            background-color: #218838;
-            border-color: #1e7e34;
-        }
-
-        body.dark-mode .quick-test-button {
-            background-color: #28a745;
-            color: white;
-            border-color: #28a745;
-        }
-
-        body.dark-mode .quick-test-button:hover {
-            background-color: #218838;
-            border-color: #1e7e34;
-        }
-
-        .simulation-test-button {
-            background-color: #ffc107;
-            color: black;
-            border: 1px solid #ffc107;
-            padding: 8px 16px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.9em;
-            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
-            transition: all 0.2s;
-            display: none;
-        }
-
-        .simulation-test-button.show {
-            display: block;
-        }
-
-        .simulation-test-button:hover {
-            background-color: #e0a800;
-            border-color: #d39e00;
-        }
-
-        body.dark-mode .simulation-test-button {
-            background-color: #ffc107;
-            color: black;
-            border-color: #ffc107;
-        }
-
-        body.dark-mode .simulation-test-button:hover {
-            background-color: #e0a800;
-            border-color: #d39e00;
-        }
-        .new-chat-button {
-            background-color: #fff;
-            color: #333;
-            border: 1px solid #dee2e6;
-            padding: 8px 16px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.9em;
-            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
-            transition: all 0.2s;
-        }
-        .new-chat-button:hover { background-color: #f8f9fa; border-color: #ced4da; }
         
-        .theme-toggle {
-            background-color: #fff;
-            color: #333;
-            border: 1px solid #dee2e6;
+        .header-btn:hover, .test-btn:hover {
+            background: var(--btn-hover-bg-light);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            transform: translateY(-1px);
+        }
+
+        .icon-btn {
             padding: 8px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 0.9em;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             width: 36px;
             height: 36px;
-        }
-        
-        .theme-toggle:hover { 
-            background-color: #f8f9fa; 
-            border-color: #ced4da; 
-        }
-        
-        body.dark-mode .theme-toggle {
-            background-color: #404040;
-            color: #ffffff;
-            border-color: #555555;
-        }
-        
-        body.dark-mode         .theme-toggle:hover {
-            background-color: #555555;
-        }
-        
-        .share-button {
-            background-color: #fff;
-            color: #333;
-            border: 1px solid #dee2e6;
-            padding: 8px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 0.9em;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
             justify-content: center;
-            width: 36px;
-            height: 36px;
+            font-size: 1em;
+            border-radius: 50%;
+        }
+
+        /* Dark Mode Buttons */
+        body.dark-mode .header-btn, body.dark-mode .test-btn {
+            background: var(--btn-bg-dark);
+            color: var(--text-color-secondary-dark);
+            border: 1px solid var(--btn-border-dark);
+        }
+        body.dark-mode .header-btn:hover, body.dark-mode .test-btn:hover {
+            background: var(--btn-hover-bg-dark);
         }
         
-        .share-button:hover { 
-            background-color: #f8f9fa; 
-            border-color: #ced4da; 
-        }
-        
-        body.dark-mode .share-button {
-            background-color: #404040;
-            color: #ffffff;
-            border-color: #555555;
-        }
-        
-        body.dark-mode .share-button:hover {
-            background-color: #555555;
-        }
-        
-        body.dark-mode .new-chat-button {
-            background-color: #404040;
-            color: #ffffff;
-            border-color: #555555;
-        }
-        
-        body.dark-mode .new-chat-button:hover {
-            background-color: #555555;
-            border-color: #666666;
-        }
+        /* Special Button Colors */
+        #login-button { background-color: #007bff; color: white; border-color: #007bff; }
+        #logout-button { background-color: #dc3545; color: white; border-color: #dc3545; }
+        #header-buy-btn, .quick-test-button, .simulation-test-button { background-color: #ffc107; color: black; border-color: #ffc107; }
+
+        body.dark-mode #login-button { background-color: #007bff; border-color: #007bff; }
+        body.dark-mode #logout-button { background-color: #dc3545; border-color: #dc3545; }
+        body.dark-mode #header-buy-btn,
+        body.dark-mode .quick-test-button,
+        body.dark-mode .simulation-test-button { background-color: #ffc107; border-color: #ffc107; }
+
+        .quick-test-button, .simulation-test-button { display: none; }
+        .quick-test-button.show, .simulation-test-button.show { display: flex; }
+
+
+        /* Chat Messages Area */
         .chat-messages {
             flex-grow: 1;
-            padding: 30px;
+            padding: 20px;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            max-width: 900px;
-            margin: 0 auto;
-            width: 100%;
-            box-sizing: border-box;
         }
+
         .message-row {
             display: flex;
-            align-items: flex-end;
+            align-items: flex-start;
             margin-bottom: 20px;
             gap: 10px;
+            max-width: 85%;
         }
-        .user-row { justify-content: flex-start; }
-        .bot-row { justify-content: flex-end; }
         
+        .user-row {
+            justify-content: flex-start;
+            align-self: flex-start;
+            flex-direction: row-reverse;
+        }
+        
+        .bot-row {
+            justify-content: flex-start;
+            align-self: flex-end;
+        }
+
         .avatar {
-            width: 32px;
-            height: 32px;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
-            background-color: #f1f3f5;
-            color: #868e96;
+            background-color: var(--input-bg-light);
+            color: var(--text-color-secondary-light);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1em;
+            font-size: 1.1em;
             flex-shrink: 0;
+            border: 1px solid var(--input-border-light);
+        }
+
+        body.dark-mode .avatar {
+            background-color: var(--input-bg-dark);
+            color: var(--text-color-secondary-dark);
+            border: 1px solid var(--input-border-dark);
         }
 
         .message {
-            max-width: 75%;
             padding: 12px 18px;
-            border-radius: 18px;
+            border-radius: 20px;
             line-height: 1.6;
             word-wrap: break-word;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.04);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            position: relative;
         }
-        .user-message { background-color: #007bff; color: white; border-bottom-right-radius: 5px; }
-        .bot-message { background-color: #fff; color: #333; border: 1px solid #e9ecef; border-bottom-left-radius: 5px; }
-        .copy-icon { color: #adb5bd; cursor: pointer; font-size: 0.9em; padding: 5px; opacity: 0; transition: opacity 0.2s, color 0.2s; }
-        .message-row:hover .copy-icon { opacity: 1; }
-        .copy-icon:hover { color: #343a40; }
+
+        .user-message {
+            background: var(--user-message-bg-light);
+            color: white;
+            border-bottom-right-radius: 5px;
+        }
+        
+        .bot-message {
+            background: var(--bot-message-bg-light);
+            color: var(--text-color-light);
+            border: 1px solid var(--header-border-light);
+            border-bottom-left-radius: 5px;
+        }
+        
+        body.dark-mode .bot-message {
+            background: var(--bot-message-bg-dark);
+            color: var(--text-color-dark);
+            border: 1px solid var(--header-border-dark);
+        }
+
+        /* Copy Icon */
+        .copy-icon {
+            color: var(--text-color-secondary-light);
+            cursor: pointer;
+            font-size: 0.9em;
+            padding: 5px;
+            opacity: 0;
+            transition: opacity 0.2s, color 0.2s;
+            align-self: center;
+            margin: 0 5px;
+        }
+        .message-row:hover .copy-icon { opacity: 0.6; }
+        .copy-icon:hover { opacity: 1; color: var(--text-color-light); }
         .copy-icon .fa-check { color: #28a745; }
-        .typing-indicator { padding: 12px 15px; }
-        .typing-indicator span { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: #aaa; margin: 0 2px; animation: bounce 1.4s infinite ease-in-out both; }
+
+        body.dark-mode .copy-icon {
+            color: var(--text-color-secondary-dark);
+        }
+        body.dark-mode .copy-icon:hover {
+            color: var(--text-color-dark);
+        }
+        .user-row .copy-icon { order: 1; }
+        .user-row .message { order: 2; }
+
+        /* Typing Indicator */
+        .typing-indicator span {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--text-color-secondary-light);
+            margin: 0 2px;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        body.dark-mode .typing-indicator span {
+            background-color: var(--text-color-secondary-dark);
+        }
         .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
         .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
         @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1.0); } }
-        .chat-input { border-top: 1px solid #e9ecef; background-color: #fff; padding: 15px 25px; }
-        
+
+        /* Chat Input Area */
+        .chat-input {
+            border-top: 1px solid var(--header-border-light);
+            padding: 15px 25px;
+            flex-shrink: 0;
+        }
+
         .chat-input-content {
-            max-width: 900px;
-            margin: 0 auto;
-            width: 100%;
             display: flex;
             align-items: flex-end;
             gap: 10px;
-            padding: 0 20px;
-            box-sizing: border-box;
+            background: var(--input-bg-light);
+            border: 1px solid var(--input-border-light);
+            border-radius: 25px;
+            padding: 8px 15px;
+            transition: all 0.3s ease;
+            flex-direction: row-reverse;
         }
+        
+        .chat-input-content:focus-within {
+            border-color: var(--input-focus-border-light);
+            box-shadow: 0 0 0 3px rgba(0,123,255,0.15);
+        }
+
+        body.dark-mode .chat-input {
+            border-top: 1px solid var(--header-border-dark);
+        }
+        body.dark-mode .chat-input-content {
+            background: var(--input-bg-dark);
+            border: 1px solid var(--input-border-dark);
+        }
+        body.dark-mode .chat-input-content:focus-within {
+            border-color: var(--input-focus-border-dark);
+            box-shadow: 0 0 0 3px rgba(0,123,255,0.2);
+        }
+
         #user-input {
             flex-grow: 1;
-            padding: 12px 18px;
-            border: 1px solid #dee2e6;
-            border-radius: 25px;
+            border: none;
+            background: transparent;
+            color: var(--text-color-light);
             font-size: 1em;
-            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
-            background-color: #f8f9fa;
-            color: #333;
+            font-family: var(--font-family);
             resize: none;
             line-height: 1.5;
-            min-height: 24px; 
-            height: 24px;
-            max-height: calc(1.5em * 5 + 24px);
-            overflow: hidden; 
-        }
-        #user-input:focus { outline: none; border-color: #a6cffb; }
-        .chat-input .input-buttons { display: flex; align-items: center; gap: 5px; }
-        .chat-input button { background-color: transparent; color: #6c757d; border: none; padding: 10px; border-radius: 50%; cursor: pointer; font-size: 1.6em; line-height: 1; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .chat-input button:hover { color: #343a40; }
-        .chat-input button:disabled { color: #ced4da; }
-        #user-input:disabled { background-color: #e9ecef; }
-        @keyframes pulse-shadow { 0%, 100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); } 50% { box-shadow: 0 0 0 8px rgba(220, 53, 69, 0); } }
-        @keyframes pulse-icon { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.2); } }
-        .mic-button.recording { color: #dc3545; animation: pulse-shadow 1.5s infinite; }
-        .mic-button.recording i { animation: pulse-icon 1.5s infinite ease-in-out; }
-        .speech-status { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(0, 0, 0, 0.8); color: white; padding: 10px 20px; border-radius: 20px; font-size: 0.9em; z-index: 1000; display: none; }
-        
-        /* مودال اشتراک‌گذاری */
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(5px);
+            min-height: 24px;
+            max-height: 120px; /* Approx 5 lines */
+            padding: 8px 5px;
+            overflow-y: auto;
         }
         
-        .modal-content {
-            background-color: #fff;
-            margin: 15% auto;
-            padding: 30px;
-            border-radius: 15px;
-            width: 90%;
-            max-width: 500px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            animation: modalSlideIn 0.3s ease-out;
-        }
+        #user-input:focus { outline: none; }
+        #user-input::placeholder { color: var(--text-color-secondary-light); }
         
-        @keyframes modalSlideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-50px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+        body.dark-mode #user-input {
+            color: var(--text-color-dark);
         }
-        
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid #e9ecef;
+        body.dark-mode #user-input::placeholder {
+            color: var(--text-color-secondary-dark);
         }
-        
-        .modal-title {
-            font-size: 1.2em;
-            font-weight: bold;
-            color: #333;
-            margin: 0;
-        }
-        
-        .close {
-            color: #aaa;
-            font-size: 28px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: color 0.2s;
-        }
-        
-        .close:hover {
-            color: #000;
-        }
-        
-        .modal-body {
-            margin-bottom: 20px;
-        }
-        
-        .share-link-container {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        
-        .share-link-input {
-            flex: 1;
-            padding: 10px 15px;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
-            font-size: 0.9em;
-            background-color: #f8f9fa;
-            color: #333;
-        }
-        
-        .copy-button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.9em;
-            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
-            transition: background-color 0.2s;
-            white-space: nowrap;
-        }
-        
-        .copy-button:hover {
-            background-color: #0056b3;
-        }
-        
-        .copy-button.copied {
-            background-color: #28a745;
-        }
-        
-        .share-warning {
-            background-color: #fff3cd;
-            border: 1px solid #ffeaa7;
-            color: #856404;
-            padding: 10px 15px;
-            border-radius: 8px;
-            font-size: 0.85em;
-            margin-top: 15px;
-        }
-        
-        /* حالت تاریک برای مودال */
-        body.dark-mode .modal-content {
-            background-color: #2d2d2d;
-            color: #ffffff;
-        }
-        
-        body.dark-mode .modal-title {
-            color: #ffffff;
-        }
-        
-        body.dark-mode .close {
-            color: #ccc;
-        }
-        
-        body.dark-mode .close:hover {
-            color: #ffffff;
-        }
-        
-        body.dark-mode .share-link-input {
-            background-color: #404040;
-            color: #ffffff;
-            border-color: #555555;
-        }
-        
-        body.dark-mode .share-warning {
-            background-color: #3d2914;
-            border-color: #6c4a00;
-            color: #ffc107;
-        }
-        
 
-        /* --- استایل‌های جدید برای مودال لاگین --- */
+        /* Input Buttons */
+        .chat-input button {
+            background: transparent;
+            color: var(--text-color-secondary-light);
+            border: none;
+            padding: 8px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.4em;
+            line-height: 1;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+        }
+        
+        .chat-input button:hover {
+            color: var(--text-color-light);
+            background-color: rgba(0,0,0,0.05);
+        }
+        
+        .chat-input button:disabled {
+            color: #ced4da;
+            background-color: transparent;
+            cursor: not-allowed;
+        }
+
+        #send-button {
+            background: #007bff;
+            color: white;
+        }
+        #send-button:hover {
+            background: #0056b3;
+            color: white;
+        }
+        #send-button:disabled {
+            background: #e9ecef;
+            color: #adb5bd;
+        }
+
+        body.dark-mode .chat-input button {
+            color: var(--text-color-secondary-dark);
+        }
+        body.dark-mode .chat-input button:hover {
+            color: var(--text-color-dark);
+            background-color: rgba(255,255,255,0.1);
+        }
+        body.dark-mode .chat-input button:disabled {
+            color: #555;
+        }
+        body.dark-mode #send-button:disabled {
+            background: #3a3a3a;
+            color: #555;
+        }
+        
+        /* Recording Mic */
+        .mic-button.recording { color: #dc3545; }
+        .mic-button.recording i { animation: pulse-icon 1.5s infinite ease-in-out; }
+        @keyframes pulse-icon { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.2); } }
+        
+        /* Mobile Responsive Header */
+        @media (max-width: 768px) {
+            .chat-header {
+                padding: 10px 15px;
+            }
+            .chat-header-title {
+                display: none; /* Hide title on mobile */
+            }
+            .header-buttons {
+                width: 100%;
+                justify-content: space-between;
+            }
+            .header-btn {
+                padding: 8px 10px;
+                font-size: 0.85em;
+            }
+            .icon-btn {
+                width: 34px;
+                height: 34px;
+                font-size: 0.9em;
+            }
+            
+            /* Hide test buttons on small screens if they are too much */
+            .quick-test-button, .simulation-test-button {
+                font-size: 0.8em;
+                padding: 8px;
+            }
+
+            .chat-messages {
+                padding: 15px;
+            }
+            .message-row {
+                max-width: 95%;
+            }
+
+            .chat-input {
+                padding: 10px 15px;
+            }
+            .chat-input-content {
+                padding: 5px 8px;
+            }
+            #user-input {
+                font-size: 16px; /* Prevent zoom */
+                padding: 6px 2px;
+            }
+            .chat-input button {
+                width: 38px;
+                height: 38px;
+                font-size: 1.3em;
+            }
+        }
+        @media (max-width: 480px) {
+            .header-btn {
+                /* Hide text, show only icon on very small screens */
+                font-size: 0.9em;
+                padding: 8px;
+                width: 36px;
+                height: 36px;
+                justify-content: center;
+            }
+            .header-btn span { display: none; } /* Hide text inside buttons */
+            .header-btn i { margin-right: 0; }
+            
+            .header-btn#login-button,
+            .header-btn#logout-button,
+            .header-btn#header-buy-btn {
+                width: auto; /* Keep login/buy button text */
+                padding: 8px 10px;
+            }
+            .header-btn#login-button span,
+            .header-btn#logout-button span,
+            .header-btn#header-buy-btn span {
+                display: inline;
+            }
+        }
+
+        /* --- MODAL STYLES (Modernized) --- */
         .modal-overlay {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.6);
-            display: none; /* اول مخفی است */
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
             justify-content: center;
             align-items: center;
             z-index: 2000;
-            backdrop-filter: blur(5px);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
         
         .modal-overlay.show {
             display: flex;
+            animation: fadeIn 0.3s ease;
         }
         
-        .login-modal {
-            background: white;
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            background: var(--modal-bg-light);
             padding: 2rem;
             border-radius: 15px;
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
             width: 90%;
-            max-width: 400px;
+            max-width: 450px; /* Consistent modal width */
             text-align: center;
+            position: relative;
+            border: 1px solid rgba(255, 255, 255, 0.3);
             animation: modalSlideIn 0.3s ease-out;
         }
         
@@ -536,37 +550,91 @@
             to { opacity: 1; transform: translateY(0) scale(1); }
         }
 
-        .login-modal h3 {
+        body.dark-mode .modal-content {
+            background: var(--modal-bg-dark);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            left: 20px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--text-color-secondary-light);
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .modal-close:hover { color: var(--text-color-light); }
+        
+        body.dark-mode .modal-close {
+            color: var(--text-color-secondary-dark);
+        }
+        body.dark-mode .modal-close:hover {
+            color: var(--text-color-dark);
+        }
+
+        .modal-content h3 {
             margin-top: 0;
             margin-bottom: 1rem;
-            color: #333;
+            color: var(--text-color-light);
+            font-weight: 600;
         }
         
-        .login-modal p {
-            color: #666;
+        .modal-content p {
+            color: var(--text-color-secondary-light);
             font-size: 0.9em;
             margin-bottom: 1.5rem;
         }
 
-        .login-input {
+        body.dark-mode .modal-content h3 { color: var(--text-color-dark); }
+        body.dark-mode .modal-content p { color: var(--text-color-secondary-dark); }
+
+        .modal-input {
             width: 100%;
             padding: 12px 15px;
-            border: 1px solid #ccc;
+            border: 1px solid var(--input-border-light);
+            background: var(--input-bg-light);
             border-radius: 8px;
             font-size: 1em;
-            text-align: left; /* برای شماره موبایل و کد بهتر است */
+            text-align: left;
             direction: ltr;
-            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            font-family: var(--font-family);
             margin-bottom: 1rem;
             box-sizing: border-box;
+            color: var(--text-color-light);
+            transition: all 0.2s;
         }
         
-        .login-input::placeholder {
-            text-align: right;
-            direction: rtl;
+        .modal-input:focus {
+            outline: none;
+            border-color: var(--input-focus-border-light);
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(0,123,255,0.15);
         }
 
-        .login-button-primary {
+        .modal-input::placeholder {
+            text-align: right;
+            direction: rtl;
+            color: var(--text-color-secondary-light);
+        }
+        
+        body.dark-mode .modal-input {
+            background: var(--input-bg-dark);
+            border-color: var(--input-border-dark);
+            color: var(--text-color-dark);
+        }
+        body.dark-mode .modal-input:focus {
+            background: #2d2d2d;
+            border-color: var(--input-focus-border-dark);
+            box-shadow: 0 0 0 3px rgba(0,123,255,0.2);
+        }
+        body.dark-mode .modal-input::placeholder {
+            color: var(--text-color-secondary-dark);
+        }
+
+        .modal-button-primary {
             width: 100%;
             padding: 12px;
             background-color: #007bff;
@@ -576,371 +644,366 @@
             font-size: 1em;
             font-weight: 600;
             cursor: pointer;
-            transition: background-color 0.2s;
-            font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;
+            transition: all 0.2s;
+            font-family: var(--font-family);
         }
         
-        .login-button-primary:hover {
+        .modal-button-primary:hover {
             background-color: #0056b3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0,123,255,0.2);
         }
         
-        .login-button-primary:disabled {
+        .modal-button-primary:disabled {
             background-color: #aaa;
             cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
         }
-        
-        .login-modal-close {
-            position: absolute;
-            top: 15px;
-            left: 20px; /* چون مودال فارسی است، دکمه بستن را سمت چپ می‌گذاریم */
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            color: #aaa;
-            cursor: pointer;
-        }
-        .login-modal-close:hover { color: #333; }
-        
-        .login-error {
+
+        .modal-error {
             color: #dc3545;
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
+            background-color: rgba(220, 53, 69, 0.1);
+            border: 1px solid rgba(220, 53, 69, 0.2);
             padding: 10px;
             border-radius: 8px;
             font-size: 0.9em;
             margin-bottom: 1rem;
-            display: none; /* در ابتدا مخفی */
+            display: none;
         }
         
-        #otp-step {
-            display: none; /* مرحله دوم در ابتدا مخفی */
+        body.dark-mode .modal-error {
+            color: #f5c6cb;
+            background-color: rgba(245, 198, 203, 0.1);
+            border-color: rgba(245, 198, 203, 0.2);
+        }
+
+        #otp-step { display: none; }
+        
+        #change-phone-btn {
+            background: none;
+            border: none;
+            color: #007bff;
+            cursor: pointer;
+            margin-top: 1rem;
+            font-family: var(--font-family);
+            font-size: 0.9em;
+        }
+        body.dark-mode #change-phone-btn { color: #58a6ff; }
+
+        /* Share Modal */
+        #share-link-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
         }
         
-        /* حالت تاریک برای مودال */
-        body.dark-mode .login-modal {
-            background: #2d2d2d;
+        #copy-share-link {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-family: var(--font-family);
+            transition: background-color 0.2s;
+            white-space: nowrap;
         }
-        body.dark-mode .login-modal h3 { color: #eee; }
-        body.dark-mode .login-modal p { color: #bbb; }
-        body.dark-mode .login-input {
-            background: #404040;
-            color: #fff;
-            border-color: #555;
+        #copy-share-link:hover { background-color: #0056b3; }
+        #copy-share-link.copied { background-color: #28a745; }
+        
+        #share-warning {
+            background-color: rgba(255, 193, 7, 0.1);
+            border: 1px solid rgba(255, 193, 7, 0.2);
+            color: #856404;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 0.85em;
+            margin-top: 15px;
+            text-align: right;
         }
-        body.dark-mode .login-modal-close { color: #888; }
-        body.dark-mode .login-modal-close:hover { color: #fff; }
-        /* --- پایان استایل‌های مودال --- */
+        body.dark-mode #share-warning {
+            background-color: rgba(255, 193, 7, 0.1);
+            border-color: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+        }
 
-        /* Mobile Responsive Design */
-        @media (max-width: 768px) {
-            body {
-                margin: 0;
-                padding: 0;
-                overflow-x: hidden;
-                height: 100vh;
-                height: 100dvh; /* Dynamic viewport height for mobile */
-                width: 100vw;
-                width: 100dvw; /* Dynamic viewport width for mobile */
-            }
-            
-            .chat-header {
-                padding: 10px 0;
-                font-size: 1em;
-            }
-            
-            .chat-header-content {
-                flex-direction: column;
-                gap: 10px;
-                align-items: stretch;
-                padding: 0 15px;
-            }
-            
-            .header-right {
-                justify-content: space-between;
-                flex-wrap: nowrap;
-                width: 100%;
-            }
-            
-            .new-chat-button, .quick-test-button, .simulation-test-button {
-                order: 1;
-                flex: 1;
-                min-width: 120px;
-                padding: 8px 16px;
-                border-radius: 8px;
-                font-size: 0.9em;
-                text-align: center;
-            }
-
-            .theme-toggle, .share-button {
-                order: 2;
-                width: 36px;
-                height: 36px;
-                padding: 8px;
-                border-radius: 20px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            
-            .chat-messages {
-                padding: 15px;
-                margin: 0;
-                height: calc(100vh - 140px);
-                height: calc(100dvh - 140px);
-                width: 100%;
-                max-width: 100%;
-                box-sizing: border-box;
-            }
-            
-            .message {
-                max-width: 85%;
-                padding: 10px 15px;
-                font-size: 0.95em;
-            }
-            
-            .chat-input {
-                padding: 10px 0;
-                margin: 0;
-                width: 100%;
-            }
-            
-            .chat-input-content {
-                gap: 8px;
-                width: 100%;
-                padding: 0 15px;
-            }
-            
-            #user-input {
-                font-size: 16px; /* Prevent zoom on iOS */
-                padding: 10px 15px;
-            }
-            
-            .chat-input button {
-                padding: 8px;
-                font-size: 1.4em;
-            }
-            
-            .modal-content {
-                margin: 10% auto;
-                padding: 20px;
-                width: 95%;
-            }
-            
-            .share-link-container {
-                flex-direction: column;
-                gap: 10px;
-            }
-            
-            .copy-button {
-                width: 100%;
-            }
-            
-            /* Hide bot avatar on mobile */
-            .bot-row .avatar {
-                display: none;
-            }
+        /* Credit Modal */
+        #credit-step h3 { color: #dc3545; }
+        
+        .credit-card-container {
+            display: flex;
+            gap: 20px;
+            margin-top: 1.5rem;
         }
         
-        @media (max-width: 480px) {
-            body {
-                margin: 0;
-                padding: 0;
-                overflow-x: hidden;
-                height: 100vh;
-                height: 100dvh;
-                width: 100vw;
-                width: 100dvw;
-            }
-            
-            .chat-header {
-                padding: 8px 0;
-            }
-            
-            .chat-header-content {
-                padding: 0 10px;
-            }
-            
-            .new-chat-button, .quick-test-button, .simulation-test-button {
-                min-width: 100px;
-                padding: 6px 12px;
-                border-radius: 8px;
-                font-size: 0.8em;
-                text-align: center;
-            }
-            
-            .theme-toggle, .share-button {
-                width: 32px;
-                height: 32px;
-                padding: 6px;
-            }
-            
-            .chat-messages {
-                padding: 10px;
-                margin: 0;
-                height: calc(100vh - 120px);
-                height: calc(100dvh - 120px);
-                width: 100%;
-                max-width: 100%;
-                box-sizing: border-box;
-            }
-            
-            .message {
-                max-width: 90%;
-                padding: 8px 12px;
-                font-size: 0.9em;
-            }
-            
-            .avatar {
-                width: 28px;
-                height: 28px;
-                font-size: 0.9em;
-            }
-            
-            .chat-input {
-                padding: 8px 0;
-                margin: 0;
-                width: 100%;
-            }
-            
-            .chat-input-content {
-                padding: 0 10px;
-            }
-            
-            #user-input {
-                padding: 8px 12px;
-                font-size: 15px;
-            }
-            
-            .modal-content {
-                margin: 5% auto;
-                padding: 15px;
-            }
-            
-            .modal-title {
-                font-size: 1.1em;
-            }
-            
-            /* Hide bot avatar on small mobile */
-            .bot-row .avatar {
-                display: none;
-            }
+        .credit-card {
+            flex: 1;
+            border: 2px solid;
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            background: var(--input-bg-light);
+        }
+        
+        .credit-card h4 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            text-align: center;
+            font-size: 1.1em;
+            font-weight: 700;
+        }
+        
+        .credit-card p {
+            font-size: 0.9em;
+            color: var(--text-color-secondary-light);
+            line-height: 1.6;
+            flex-grow: 1;
+        }
+        
+        .credit-card.green-theme { display: none; } /* مخفی کردن کارت سبز */
+        
+        .credit-card.yellow-theme {
+            border-color: #ffc107;
+            background-color: rgba(255, 193, 7, 0.05);
+        }
+        .credit-card.yellow-theme h4 { color: #d39e00; }
+        .btn-yellow {
+            background-color: #ffc107 !important;
+            color: black !important;
+            border: none;
+        }
+        .btn-yellow:hover {
+            background-color: #e0a800 !important;
+            box-shadow: 0 4px 10px rgba(255,193,7,0.2);
+        }
+        
+        body.dark-mode .credit-card {
+            background-color: var(--input-bg-dark);
+        }
+        body.dark-mode .credit-card p {
+            color: var(--text-color-secondary-dark);
+        }
+        body.dark-mode .credit-card.yellow-theme {
+            border-color: #ffc107;
+            background-color: rgba(255, 193, 7, 0.1);
+        }
+        body.dark-mode .credit-card.yellow-theme h4 {
+            color: #ffe08a;
+        }
+        
+        @media (max-width: 600px) {
+            .credit-card-container { flex-direction: column; }
         }
 
-        /* --- استایل برای جدول‌های Markdown --- */
+        /* Price Display */
+        .price-container {
+            text-align: center;
+            margin: 15px 0;
+            min-height: 80px;
+        }
+        .price-loading {
+            color: var(--text-color-secondary-light);
+            font-style: italic;
+        }
+        .timer-message {
+            color: #c82333;
+            font-weight: 700;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+        }
+        body.dark-mode .timer-message { color: #ff8a8a; }
+        
+        .price-line {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 5px;
+        }
+        .original-price-strikethrough {
+            text-decoration: line-through;
+            color: var(--text-color-secondary-light);
+            font-size: 1.1em;
+        }
+        .discount-badge {
+            background-color: #dc3545;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 700;
+        }
+        .final-price {
+            font-size: 1.8em;
+            font-weight: 800;
+            color: var(--text-color-light);
+        }
+        body.dark-mode .final-price { color: var(--text-color-dark); }
+        
+        /* Markdown Tables */
         .bot-message table {
             width: 100%;
             border-collapse: collapse;
             margin: 15px 0;
-            background-color: #ffffff;
             font-size: 0.9em;
             border-radius: 8px;
             overflow: hidden;
-            border: 1px solid #e9ecef;
+            border: 1px solid var(--input-border-light);
         }
         .bot-message th, .bot-message td {
-            border: 1px solid #e9ecef;
+            border: 1px solid var(--input-border-light);
             padding: 10px 12px;
             text-align: right;
         }
         .bot-message th {
-            background-color: #f8f9fa;
+            background-color: var(--input-bg-light);
             font-weight: 600;
         }
-        /* --- استایل جدول در حالت تاریک --- */
         body.dark-mode .bot-message table {
-            background-color: #2d2d2d;
-            border-color: #404040;
+            border-color: var(--input-border-dark);
         }
         body.dark-mode .bot-message th, body.dark-mode .bot-message td {
-            border-color: #404040;
+            border-color: var(--input-border-dark);
         }
         body.dark-mode .bot-message th {
-            background-color: #404040;
+            background-color: var(--input-bg-dark);
         }
-
     </style>
 </head>
 <body>
-    <div class="chat-header">
-        <div class="chat-header-content">
-            <div>مشاور شغلی هزارجاب</div>
-            <div class="header-right">
-                <button class="new-chat-button" id="login-button" style="background-color: #007bff; color: white; border-color: #007bff;">
-                    <i class="fas fa-sign-in-alt"></i> ورود / ثبت‌نام
+
+    <div class="chat-container">
+        <div class="chat-header">
+            <div class="chat-header-title">مشاور شغلی هزارجاب</div>
+            <div class="header-buttons">
+                <button class="header-btn" id="login-button">
+                    <i class="fas fa-sign-in-alt"></i>
+                    <span>ورود / ثبت‌نام</span>
                 </button>
-                <button class="new-chat-button" id="logout-button" style="display: none; background-color: #dc3545; color: white; border-color: #dc3545;">
-                    خروج
+                <button class="header-btn" id="logout-button" style="display: none;">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>خروج</span>
                 </button>
-                <button class="quick-test-button" id="quick-test-button" title="تست سریع (ادمین)">⚡ تست سریع</button>
-                <button class="simulation-test-button" id="simulation-test-button" title="تست شبیه‌سازی پیشرفته (ادمین)">🧪 تست شبیه‌سازی</button>
-                <button class="share-button" id="share-button" title="اشتراک‌گذاری چت">
+                
+                <button class="test-btn quick-test-button" id="quick-test-button" title="تست سریع (ادمین)">
+                    <i class="fas fa-bolt"></i>
+                    <span class="admin-btn-text">تست سریع</span>
+                </button>
+                <button class="test-btn simulation-test-button" id="simulation-test-button" title="تست شبیه‌سازی (ادمین)">
+                    <i class="fas fa-vial"></i>
+                    <span class="admin-btn-text">تست شبیه‌سازی</span>
+                </button>
+
+                <button class="header-btn" id="header-buy-btn" style="display: none;">
+                    <i class="fas fa-credit-card"></i>
+                    <span>خرید اشتراک</span>
+                </button>
+
+                <button class="header-btn icon-btn" id="share-button" title="اشتراک‌گذاری چت">
                     <i class="fas fa-share-alt"></i>
                 </button>
-                <button class="theme-toggle" id="theme-toggle">
+                <button class="header-btn icon-btn" id="theme-toggle" title="تغییر تم">
                     <i class="fas fa-moon" id="theme-icon"></i>
                 </button>
-                <button class="new-chat-button" id="new-chat-button">+ گفت‌وگوی جدید</button>
+                
+                <button class="header-btn" id="new-chat-button" style="display: none;">+ گفت‌وگوی جدید</button>
+            </div>
+        </div>
+
+        <div class="chat-messages" id="chat-messages">
+            </div>
+
+        <div class="chat-input" id="chat-input">
+            <div class="chat-input-content">
+                <textarea id="user-input" placeholder="پیام خود را بنویسید..." rows="1"></textarea>
+                <button id="mic-button" class="mic-button" title="گفت‌وگوی صوتی"><i class="fas fa-microphone"></i></button>
+                <button id="send-button" title="ارسال پیام"><i class="fas fa-paper-plane"></i></button>
             </div>
         </div>
     </div>
-    <div class="chat-messages" id="chat-messages"></div>
-    <div class="chat-input" id="chat-input">
-        <div class="chat-input-content">
-            <textarea id="user-input" placeholder="پیام خود را بنویسید..." rows="1"></textarea>
-            <div class="input-buttons">
-                <button id="mic-button" class="mic-button"><i class="fas fa-microphone"></i></button>
-                <button id="send-button"><i class="fas fa-paper-plane"></i></button>
-            </div>
-        </div>
-    </div>
-    <div id="speech-status" class="speech-status"></div>
     
-    <div id="share-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">اشتراک‌گذاری چت</h3>
-                <span class="close" id="close-share-modal">&times;</span>
+    <div id="speech-status" class="speech-status"></div>
+
+    <div id="share-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 500px;">
+            <button class="modal-close" id="close-share-modal">&times;</button>
+            <h3 style="margin-bottom: 1.5rem;">اشتراک‌گذاری چت</h3>
+            
+            <div id="share-link-container">
+                <input type="text" id="share-link-input" class="modal-input" style="text-align: left; direction: ltr;" readonly>
+                <button id="copy-share-link" class="copy-share-link">کپی</button>
             </div>
-            <div class="modal-body">
-                <div class="share-link-container">
-                    <input type="text" id="share-link-input" class="share-link-input" readonly>
-                    <button id="copy-share-link" class="copy-button">کپی لینک</button>
-                </div>
-                <div class="share-warning">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    توجه: با اشتراک‌گذاری این لینک، تمامی محتوای چت شما در دسترس دیگران قرار می‌گیرد.
-                </div>
+            <div id="share-warning" class="share-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+                توجه: با اشتراک‌گذاری، تمامی محتوای چت شما در دسترس دیگران قرار می‌گیرد.
             </div>
         </div>
     </div>
 
     <div class="modal-overlay" id="login-modal-overlay">
-        <div class="login-modal">
-            <button class="login-modal-close" id="login-modal-close-btn">&times;</button>
+        <div class="modal-content">
+            <button class="modal-close" id="login-modal-close-btn">&times;</button>
             
             <div id="phone-step">
                 <h3>ورود یا ثبت‌نام</h3>
                 <p>برای ادامه و مشاهده تحلیل، لطفاً شماره موبایل خود را وارد کنید.</p>
-                <div class="login-error" id="login-error-phone"></div>
-                <input type="tel" id="phone-input" class="login-input" placeholder="مثال: 09121234567">
-                <button id="send-otp-btn" class="login-button-primary">ارسال کد تایید</button>
+                <div class="modal-error" id="login-error-phone"></div>
+                <input type="tel" id="phone-input" class="modal-input" placeholder="مثال: 09121234567">
+                <button id="send-otp-btn" class="modal-button-primary">ارسال کد تایید</button>
             </div>
             
             <div id="otp-step">
                 <h3>کد تایید را وارد کنید</h3>
                 <p id="otp-message">کد ۶ رقمی ارسال شده به شماره زیر را وارد کنید:</p>
-                <p id="user-phone-display" style="font-weight: bold; color: #333; direction: ltr;"></p>
-                <div class="login-error" id="login-error-otp"></div>
-                <input type="tel" id="otp-input" class="login-input" placeholder="کد تایید ۶ رقمی" maxlength="6">
-                <button id="verify-otp-btn" class="login-button-primary">تایید و ورود</button>
-                <button id="change-phone-btn" style="background: none; border: none; color: #007bff; cursor: pointer; margin-top: 1rem; font-family: 'Vazirmatn', Vazirmatn, Tahoma, Arial, sans-serif;">
-                    تغییر شماره موبایل
-                </button>
+                <p id="user-phone-display" style="font-weight: bold; color: var(--text-color-light); direction: ltr;"></p>
+                <div class="modal-error" id="login-error-otp"></div>
+                <input type="tel" id="otp-input" class="modal-input" placeholder="کد تایید ۶ رقمی" maxlength="6">
+                <button id="verify-otp-btn" class="modal-button-primary">تایید و ورود</button>
+                <button id="change-phone-btn">تغییر شماره موبایل</button>
             </div>
         </div>
     </div>
     
+    <div class="modal-overlay" id="credit-modal-overlay">
+        <div class="modal-content">
+            <button class="modal-close" id="credit-modal-close-btn">&times;</button>
+            
+            <div id="credit-step">
+                <h3 style="color: #dc3545; text-align: center;">اعتبار شما تمام شد!</h3>
+                <p style="text-align: center; margin-bottom: 2rem;">اعتبار رایگان شما به پایان رسیده است. برای ادامه گفتگو، اشتراک تهیه کنید.</p>
+                
+                <div class="credit-card-container">
+                    <div class="credit-card yellow-theme" style="width: 100%; box-sizing: border-box;">
+                        <h4>خرید اشتراک (چت نامحدود)</h4>
+                        <p>با پرداخت هزینه، به مدت **۱ روز** به صورت نامحدود با مشاور شغلی گفتگو کنید.</p>
+                        
+                        <div class="modal-error" id="payment-error"></div>
+                        
+                        <div id="price-display-container" class="price-container">
+                            <div class="price-loading">در حال بارگذاری قیمت...</div>
+                            <div id="discount-timer-message" class="timer-message"></div>
+                            <div class="price-line">
+                                <span id="original-price" class="original-price-strikethrough"></span>
+                                <span id="discount-badge" class="discount-badge"></span>
+                            </div>
+                            <div id="final-price" class="final-price"></div>
+                        </div>
+                        
+                        <button id="buy-subscription-btn" class="modal-button-primary btn-yellow">
+                            خرید اشتراک ۱ روزه
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
+        
         // Configuration
         // برای تغییر URL سرور، این متغیرها را تغییر دهید:
         // مثال: const API_BASE_URL = 'https://your-domain.com';
@@ -965,7 +1028,7 @@
         const themeToggle = document.getElementById('theme-toggle');
         const themeIcon = document.getElementById('theme-icon');
         const shareButton = document.getElementById('share-button');
-        const shareModal = document.getElementById('share-modal');
+        const shareModal = document.getElementById('share-modal'); // [MODERN] این اکنون .modal-overlay است
         const closeShareModal = document.getElementById('close-share-modal');
         const shareLinkInput = document.getElementById('share-link-input');
         const copyShareLink = document.getElementById('copy-share-link');
@@ -991,6 +1054,23 @@
         const loginErrorPhone = document.getElementById('login-error-phone');
         const loginErrorOtp = document.getElementById('login-error-otp');
         // --- پایان المان‌های لاگین ---
+        // --- [جدید] المان‌های مودال اعتبار ---
+        const creditModalOverlay = document.getElementById('credit-modal-overlay');
+        const creditModalCloseBtn = document.getElementById('credit-modal-close-btn');
+        const buySubscriptionBtn = document.getElementById('buy-subscription-btn');
+        const paymentError = document.getElementById('payment-error');
+        const headerBuyBtn = document.getElementById('header-buy-btn'); // دکمه هدر
+
+        // المان‌های داینامیک قیمت
+        const priceDisplayContainer = document.getElementById('price-display-container');
+        const originalPriceEl = document.getElementById('original-price');
+        const discountBadgeEl = document.getElementById('discount-badge');
+        const finalPriceEl = document.getElementById('final-price');
+        const discountTimerMessageEl = document.getElementById('discount-timer-message');
+        const priceLoadingEl = priceDisplayContainer.querySelector('.price-loading');
+        
+        let discountCountdownInterval = null; // برای نگهداری تایمر
+        // --- پایان المان‌های مودال اعتبار ---
         
         // شناسه کاربر ناشناس (مهمان)
         let anonymous_user_id = localStorage.getItem('anonymous_user_id') || 'web_user_' + Date.now() + Math.random().toString(36).substr(2, 9);
@@ -1162,6 +1242,7 @@
         function addMessage(text, sender) {
             const messageRow = document.createElement('div');
             messageRow.classList.add('message-row', sender === 'user' ? 'user-row' : 'bot-row');
+            
             const messageElement = document.createElement('div');
             messageElement.classList.add('message', sender === 'user' ? 'user-message' : 'bot-message');
             
@@ -1185,10 +1266,9 @@
                 const avatar = document.createElement('div');
                 avatar.classList.add('avatar');
                 avatar.innerHTML = '<i class="fa-solid fa-robot"></i>';
-                // تغییر ۱: تغییر ترتیب برای جابجایی آیکون کپی
-                messageRow.appendChild(copyIcon);
-                messageRow.appendChild(messageElement);
-                messageRow.appendChild(avatar);
+                messageRow.appendChild(copyIcon);       // 1. آیکون کپی
+                messageRow.appendChild(messageElement); // 2. پیام
+                messageRow.appendChild(avatar);         // 3. آواتار (بصری در سمت چپ)
             }
             chatMessages.appendChild(messageRow);
             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -1209,11 +1289,15 @@
                 const avatar = document.createElement('div');
                 avatar.classList.add('avatar');
                 avatar.innerHTML = '<i class="fa-solid fa-robot"></i>';
-                // تغییر ۱: تغییر ترتیب برای جابجایی آیکون کپی
-                messageRow.appendChild(copyIcon);
-                messageRow.appendChild(messageElement);
-                messageRow.appendChild(avatar);
+                messageRow.appendChild(copyIcon);       // 1. آیکون کپی
+                messageRow.appendChild(messageElement); // 2. پیام
+                messageRow.appendChild(avatar);         // 3. آواتار (بصری در سمت چپ)
             }
+            // User message typing is not implemented, but keeping structure
+            // else {
+            //     messageRow.appendChild(messageElement);
+            //     messageRow.appendChild(copyIcon);
+            // }
 
             chatMessages.appendChild(messageRow);
             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -1326,6 +1410,7 @@
             if (indicatorRow) indicatorRow.remove(); 
         }
         function startNewChat(isReloadingAfterLogin = false) {
+            if (headerBuyBtn) headerBuyBtn.style.display = 'none'; // [جدید] مخفی کردن دکمه هدر
             chatMessages.innerHTML = '';
             currentConversationId = null; // ریست کردن شناسه چت
             finalTranscript = '';
@@ -1480,13 +1565,13 @@
         
         
         function openShareModal() {
-            shareModal.style.display = 'block';
+            shareModal.classList.add('show');
             shareLinkInput.value = 'در حال تولید لینک...';
             generateShareLink();
         }
         
         function closeShareModalHandler() {
-            shareModal.style.display = 'none';
+            shareModal.classList.remove('show');
         }
         
         async function copyToClipboard() {
@@ -1496,7 +1581,7 @@
                 copyShareLink.classList.add('copied');
                 
                 setTimeout(() => {
-                    copyShareLink.textContent = 'کپی لینک';
+                    copyShareLink.textContent = 'کپی';
                     copyShareLink.classList.remove('copied');
                 }, 2000);
             } catch (error) {
@@ -1508,7 +1593,7 @@
                 copyShareLink.classList.add('copied');
                 
                 setTimeout(() => {
-                    copyShareLink.textContent = 'کپی لینک';
+                    copyShareLink.textContent = 'کپی';
                     copyShareLink.classList.remove('copied');
                 }, 2000);
             }
@@ -1531,6 +1616,188 @@
             loginErrorPhone.style.display = 'none';
             loginErrorOtp.style.display = 'none';
         }
+
+        function openCreditModal() {
+            // ریست کردن خطاها
+            paymentError.style.display = 'none';
+            
+            // [جدید] نمایش دکمه خرید در هدر
+            if (headerBuyBtn) {
+                headerBuyBtn.style.display = 'flex'; /* [MODERN] use flex */
+            }
+
+            // [جدید] بارگذاری قیمت‌ها قبل از نمایش مودال
+            loadAndDisplayPrice(); 
+            
+            // نمایش مودال (تابع loadAndDisplayPrice خودش مودال را نشان می‌دهد)
+        }
+        
+        function closeCreditModal() {
+            creditModalOverlay.classList.remove('show');
+        }
+
+        function closeCreditModal() {
+            creditModalOverlay.classList.remove('show');
+            // [جدید] توقف تایمر در صورت بسته شدن مودال
+            if (discountCountdownInterval) {
+                clearInterval(discountCountdownInterval);
+                discountCountdownInterval = null;
+            }
+        }
+        
+        // --- [جدید] تابع بارگذاری و نمایش قیمت ---
+        async function loadAndDisplayPrice() {
+            if (!authToken) {
+                // اگر کاربر لاگین نیست، به لاگین بفرست (چون برای چک کردن تخفیف به توکن نیاز است)
+                openLoginModal();
+                return;
+            }
+
+            // نمایش حالت لودینگ
+            priceLoadingEl.style.display = 'block';
+            originalPriceEl.style.display = 'none';
+            discountBadgeEl.style.display = 'none';
+            finalPriceEl.style.display = 'none';
+            discountTimerMessageEl.style.display = 'none';
+            buySubscriptionBtn.disabled = true; // غیرفعال تا قیمت لود شود
+
+            // باز کردن مودال (تا کاربر لودینگ را ببیند)
+            creditModalOverlay.classList.add('show');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/get-subscription-price`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'خطا در دریافت قیمت');
+                }
+
+                // پنهان کردن لودینگ
+                priceLoadingEl.style.display = 'none';
+                
+                if (data.is_discounted) {
+                    // --- حالت تخفیف ---
+                    originalPriceEl.textContent = data.original_price.toLocaleString('fa-IR') + ' تومان';
+                    discountBadgeEl.textContent = '۵۱٪ تخفیف';
+                    finalPriceEl.textContent = data.price.toLocaleString('fa-IR') + ' تومان';
+                    
+                    originalPriceEl.style.display = 'inline';
+                    discountBadgeEl.style.display = 'inline-block';
+                    finalPriceEl.style.display = 'block';
+                    discountTimerMessageEl.style.display = 'block';
+                    
+                    startCountdownTimer(data.discount_ends_at);
+
+                } else {
+                    // --- حالت قیمت اصلی ---
+                    finalPriceEl.textContent = data.price.toLocaleString('fa-IR') + ' تومان';
+                    
+                    originalPriceEl.style.display = 'none';
+                    discountBadgeEl.style.display = 'none';
+                    finalPriceEl.style.display = 'block';
+                    discountTimerMessageEl.style.display = 'none';
+
+                    if (discountCountdownInterval) {
+                        clearInterval(discountCountdownInterval);
+                    }
+                }
+                
+                buySubscriptionBtn.disabled = false; // فعال کردن دکمه خرید
+
+            } catch (error) {
+                priceLoadingEl.textContent = `خطا: ${error.message}`;
+                priceLoadingEl.style.color = 'red';
+            }
+        }
+
+        // --- [جدید] تابع تایمر شمارش معکوس ---
+        function startCountdownTimer(endTimeISO) {
+            if (discountCountdownInterval) {
+                clearInterval(discountCountdownInterval);
+            }
+            
+            const endTime = new Date(endTimeISO).getTime();
+
+            discountCountdownInterval = setInterval(() => {
+                const now = new Date().getTime();
+                const distance = endTime - now;
+
+                if (distance < 0) {
+                    clearInterval(discountCountdownInterval);
+                    discountTimerMessageEl.textContent = "مهلت تخفیف ویژه تمام شد!";
+                    // [جدید] رفرش کردن قیمت‌ها پس از اتمام تایمر
+                    loadAndDisplayPrice(); 
+                    return;
+                }
+
+                // --- [اصلاح شد] محاسبه کامل روز، ساعت، دقیقه و ثانیه ---
+                const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+                // ساخت رشته داینامیک برای نمایش
+                let timerString = "مهلت تخفیف: ";
+                if (days > 0) {
+                    timerString += `${days} روز و ${hours} ساعت`;
+                } else if (hours > 0) {
+                    timerString += `${hours} ساعت و ${minutes} دقیقه`;
+                } else {
+                    timerString += `${minutes} دقیقه و ${seconds} ثانیه`;
+                }
+                
+                discountTimerMessageEl.textContent = timerString;
+                // --- پایان اصلاح ---
+
+            }, 1000);
+        }
+
+        async function handleBuySubscription() {
+            if (!authToken) {
+                paymentError.textContent = 'برای خرید، ابتدا باید وارد شوید.';
+                paymentError.style.display = 'block';
+                openLoginModal(); // هدایت به لاگین
+                return;
+            }
+            
+            buySubscriptionBtn.disabled = true;
+            buySubscriptionBtn.textContent = 'در حال انتقال به درگاه...';
+            paymentError.textContent = ''; // [اصلاح شد]
+            paymentError.style.display = 'none'; // [اصلاح شد]
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/create-payment-request`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'خطا در ایجاد پرداخت');
+                }
+                
+                if (data.payment_url) {
+                    // موفقیت! هدایت کاربر به درگاه پرداخت
+                    window.location.href = data.payment_url;
+                } else {
+                    throw new Error('آدرس درگاه پرداخت دریافت نشد.');
+                }
+                
+            } catch (error) {
+                paymentError.textContent = error.message; // [اصلاح شد]
+                paymentError.style.display = 'block'; // [اصلاح شد]
+                buySubscriptionBtn.disabled = false;
+                buySubscriptionBtn.textContent = 'خرید اشتراک (تلاش مجدد)';
+            }
+        }
+        // --- پایان توابع جدید ---
 
         function showLoginError(step, message) {
             if (step === 'phone') {
@@ -1594,16 +1861,24 @@
             loginErrorOtp.style.display = 'none';
             
             try {
+                const refCode = localStorage.getItem('referral_code');
+                    
+                const body = {
+                    phone_number: phone, 
+                    code: code,
+                    anonymous_user_id: anonymous_user_id // مهم: شناسه چت مهمان را می‌فرستیم
+                };
+                
+                if (refCode) {
+                    body.referral_code = refCode;
+                }
+
                 const response = await fetch(`${API_BASE_URL}/api/verify-otp`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        phone_number: phone, 
-                        code: code,
-                        anonymous_user_id: anonymous_user_id // مهم: شناسه چت مهمان را می‌فرستیم
-                    })
+                    body: JSON.stringify(body) // ارسال body جدید
                 });
-                
+            
                 const data = await response.json();
                 
                 if (!response.ok) {
@@ -1618,7 +1893,11 @@
                 // ۲. پاک کردن شناسه ناشناس (چون چت‌ها منتقل شدند)
                 localStorage.removeItem('anonymous_user_id');
                 anonymous_user_id = null;
-                
+                // --- [جدید] پاک کردن کد معرف استفاده شده ---
+                localStorage.removeItem('referral_code');
+                // --- [جدید] مخفی کردن دکمه هدر (چون اعتبار ریست شده) ---
+                if (headerBuyBtn) headerBuyBtn.style.display = 'none';
+
                 // ۳. آپدیت UI
                 updateLoginButton();
                 closeLoginModal();
@@ -1644,13 +1923,10 @@
             if (authToken) {
                 // کاربر لاگین است
                 loginButton.style.display = 'none';
-                if (logoutButton) logoutButton.style.display = 'inline-block';
+                if (logoutButton) logoutButton.style.display = 'flex'; /* [MODERN] use flex */
             } else {
                 // کاربر لاگین نیست
-                loginButton.style.display = 'inline-block';
-                loginButton.innerHTML = '<i class="fas fa-sign-in-alt"></i> ورود / ثبت‌نام';
-                loginButton.style.backgroundColor = '#007bff';
-                loginButton.style.borderColor = '#007bff';
+                loginButton.style.display = 'flex'; /* [MODERN] use flex */
                 if (logoutButton) logoutButton.style.display = 'none';
             }
         }
@@ -1733,16 +2009,15 @@
                         const isSummaryConfirm = lastText.includes('تصویر درستی ازت پیدا کردم') || lastText.includes('آیا این تصویر رو تایید می‌کنی') || lastText.includes('بر اساس حرف‌هات، من آدمی رو می‌بینم که');
                         const isLoginGate = lastText.includes('برای مشاهده پیشنهادهای شغلی و تحلیل نهایی، لطفاً وارد شو') || lastText.includes('تحلیلت آماده‌ست. 🚀');
                         if (!isSummaryConfirm && !isLoginGate) {
-                            addMessage('سلام! خوش برگشتی. مکالمه قبلی شما بارگذاری شد. می‌تونی ادامه بدی.', 'bot');
+                            //addMessage('سلام! خوش برگشتی. مکالمه قبلی شما بارگذاری شد. می‌تونی ادامه بدی.', 'bot');
                         }
                         
                     } else {
-                        addTypedMessage('سلام! خوش برگشتی. می‌خوای یک موضوع جدید رو شروع کنیم؟', 'bot');
+                        //addTypedMessage('سلام! خوش برگشتی. می‌خوای یک موضوع جدید رو شروع کنیم؟', 'bot');
                     }
                 } else {
                     // کاربر لاگین است اما هیچ چتی ندارد
-                    addTypedMessage('سلام! خوش برگشتی. برای اینکه بتونم بهتر کمکت کنم، لطفاً خودت رو کامل معرفی کن.', 'bot');
-                }
+                    addTypedMessage('سلام! من مشاور شغلی «هزارجاب» هستم. برای اینکه بتونم بهتر کمکت کنم، لطفاً خودت رو کامل معرفی کن: نام، سن، جنسیت، وضعیت شغلی فعلی و رشتهٔ تحصیلی.', 'bot');                }
 
             } catch (error) {
                 console.error('Error loading history:', error);
@@ -1928,6 +2203,18 @@
                     addTypedMessage(data.reply, 'bot');
                     // باز کردن خودکار مودال لاگین
                     setTimeout(openLoginModal, 3500); 
+                } else if (data.reply_type === 'credit_limit_reached') {
+                    // --- [جدید] مدیریت اتمام اعتبار ---
+                    removeTypingIndicator();
+                    // باز کردن مودال اعتبار
+                    openCreditModal(); 
+                    // توجه: پیام را به چت اضافه نمی‌کنیم، پاپ‌آپ خودش توضیح می‌دهد
+                    
+                    // مهم: ورودی‌ها را قفل نکنید
+                    sendButton.disabled = false; 
+                    userInput.disabled = false; 
+                    micButton.disabled = false;
+
                 } else {
                     // پاسخ استاندارد
                     addTypedMessage(data.reply, 'bot');
@@ -1997,25 +2284,18 @@
         });
         
         userInput.addEventListener('input', () => {
-            const lineHeight = parseInt(window.getComputedStyle(userInput).lineHeight);
-            const minHeight = 24;
-            const twoLineHeight = lineHeight * 2;
+            const lineHeight = 24; // (1em * 1.5)
+            userInput.style.height = 'auto'; // Reset height
             
-            userInput.style.height = 'auto';
             const scrollHeight = userInput.scrollHeight;
+            const maxHeight = 120; // max-height
             
-            // اگر محتوا کمتر از 2 خط باشد، ارتفاع را 24 نگه دار
-            if (scrollHeight <= twoLineHeight) {
-                userInput.style.height = minHeight + 'px';
-            } else {
-                userInput.style.height = scrollHeight + 'px';
-            }
-            
-            const maxHeight = parseInt(window.getComputedStyle(userInput).maxHeight);
-            if (userInput.scrollHeight > maxHeight) {
-                userInput.style.overflowY = 'auto';
-            } else {
+            if (scrollHeight <= maxHeight) {
+                userInput.style.height = `${scrollHeight}px`;
                 userInput.style.overflowY = 'hidden';
+            } else {
+                userInput.style.height = `${maxHeight}px`;
+                userInput.style.overflowY = 'auto';
             }
         });
 
@@ -2026,24 +2306,6 @@
                 resumeTypingIfNeeded();
             }
         });
-
-        // اسکرول chat-messages وقتی موس در خارج از آن است
-        document.addEventListener('wheel', (event) => {
-            const chatMessagesElement = document.getElementById('chat-messages');
-            const rect = chatMessagesElement.getBoundingClientRect();
-            const mouseX = event.clientX;
-            const mouseY = event.clientY;
-            
-            // بررسی اینکه آیا موس در خارج از chat-messages است
-            const isOutsideChat = mouseX < rect.left || mouseX > rect.right || 
-                                 mouseY < rect.top || mouseY > rect.bottom;
-            
-            if (isOutsideChat && !event.ctrlKey && !event.metaKey) {
-                // جلوگیری از اسکرول صفحه و اسکرول chat-messages به جای آن
-                event.preventDefault();
-                chatMessagesElement.scrollTop += event.deltaY;
-            }
-        }, { passive: false });
 
         // تابع بررسی وضعیت احراز هویت ادمین
         async function checkAdminAuth() {
@@ -2135,7 +2397,7 @@
             } finally {
                 // فعال کردن مجدد دکمه‌ها
                 quickTestButton.disabled = false;
-                quickTestButton.textContent = '⚡ تست سریع';
+                quickTestButton.innerHTML = '<i class="fas fa-bolt"></i><span class="admin-btn-text">تست سریع</span>';
                 sendButton.disabled = false;
                 userInput.disabled = false;
                 micButton.disabled = false;
@@ -2302,7 +2564,7 @@
                 "یادمه وقتی 5 سالم بود، پدرم یه کامپیوتر قدیمی آورد خونه. خیلی کنجکاو بودم که این چیز چطوری کار می‌کنه.",
                 "آخرین پروژه تیمی که داشتم، توسعه یه API برای یه اپلیکیشن موبایل بود. تو تیم 4 نفره بودیم.",
                 "یه بار deadline یه پروژه خیلی نزدیک بود و یهو متوجه شدیم یه bug بزرگ تو production هست.",
-                "بیشتر به سمت استارتاپ با آزادی عمل بالا کشیده میشم. چون دوست دارم خودم تصمیم بگیرم.",
+                "بیشتر به سمت استارTAپ با آزادی عمل بالا کشیده میشم. چون دوست دارم خودم تصمیم بگیرم.",
                 "پروژه‌ای که خیلی ازش لذت بردم، ساخت یه ابزار automation برای خودم بود."
             ];
 
@@ -2400,7 +2662,7 @@
             } finally {
                 // فعال کردن مجدد دکمه‌ها
                 simulationTestButton.disabled = false;
-                simulationTestButton.textContent = '🧪 تست شبیه‌سازی';
+                simulationTestButton.innerHTML = '<i class="fas fa-vial"></i><span class="admin-btn-text">تست شبیه‌سازی</span>';
                 sendButton.disabled = false;
                 userInput.disabled = false;
                 micButton.disabled = false;
@@ -2510,8 +2772,60 @@
         });
         // --- پایان Event Listeners لاگین ---
 
+        // --- [جدید] Event Listeners مودال اعتبار ---
+        creditModalCloseBtn.addEventListener('click', closeCreditModal);
+        
+        creditModalOverlay.addEventListener('click', (e) => {
+            if (e.target === creditModalOverlay) {
+                closeCreditModal();
+            }
+        });
+        
+        // (شنونده کارت سبز حذف شد)
+        buySubscriptionBtn.addEventListener('click', handleBuySubscription);
+
+        // [جدید] شنونده دکمه هدر
+        if (headerBuyBtn) {
+            headerBuyBtn.addEventListener('click', openCreditModal);
+        }
+        
+        // [MODERN] بستن مودال اشتراک‌گذاری با کلیک روی پس‌زمینه
+        shareModal.addEventListener('click', (e) => {
+            if (e.target === shareModal) {
+                closeShareModalHandler();
+            }
+        });
+        // --- پایان Event Listeners مودال اعتبار ---
+
         window.addEventListener('load', async () => {
             loadTheme();
+            // --- [جدید] بررسی پارامترهای URL برای کد معرف و وضعیت پرداخت ---
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                
+                // 1. بررسی کد معرف (ref)
+                const refCode = urlParams.get('ref');
+                if (refCode) {
+                    localStorage.setItem('referral_code', refCode);
+                    // آدرس را پاک می‌کنیم تا در رفرش بعدی دوباره خوانده نشود
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                }
+                
+                // 2. بررسی وضعیت پرداخت (payment)
+                const paymentStatus = urlParams.get('payment');
+                if (paymentStatus) {
+                    if (paymentStatus === 'success') {
+                        alert('پرداخت شما با موفقیت انجام شد! اشتراک ۳ روزه شما فعال شد.');
+                    } else if (paymentStatus === 'failed') {
+                        alert('پرداخت شما ناموفق بود یا توسط شما لغو شد. در صورت کسر وجه، مبلغ تا ۷۲ ساعت آینده به حساب شما بازمی‌گردد.');
+                    }
+                    // آدرس را پاک می‌کنیم
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                }
+            } catch (e) {
+                console.error("Error processing URL params:", e);
+            }
+            // --- پایان بخش جدید ---
             
             // (اصلاح شد) اول توکن را بخوان
             authToken = localStorage.getItem('authToken');
