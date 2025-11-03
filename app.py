@@ -1706,6 +1706,24 @@ async def handle_web_message(user_message: str, conversation_history: list, user
             logger.error(f"LLM error after summary confirm: {e}", exc_info=True)
             return {'reply_type': 'error', 'reply': 'خطا در تولید پیشنهادهای شغلی.'}
         
+        # --- [تغییر ۳] اعطای 4 اعتبار پیام رایگان پس از تحویل گزارش ---
+        # (این کار فقط یک بار انجام می‌شود، زمانی که اعتبار 1- است)
+        try:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("""
+                        UPDATE public.user_credits 
+                        SET message_credits = 4
+                        WHERE user_id = :uid AND message_credits = -1
+                    """),
+                    {"uid": user_id}
+                )
+                conn.commit()
+                logger.info(f"Granted 4 follow-up message credits to user {user_id} (from -1 to 4).")
+        except Exception as e:
+            logger.error(f"Failed to grant follow-up credits to user {user_id}: {e}", exc_info=True)
+        # --- [پایان تغییر ۳] ---
+
         # --- (اصلاح شده برای مشکل 1) ---
         # اگر این یک تریگر مخفی پس از لاگین است، پیام "ادامه بده" را در تاریخچه ذخیره نکن.
         if is_post_login_trigger:
@@ -1800,14 +1818,16 @@ def chat():
 
                     # بررسی اشتراک نامحدود
                     is_subscribed = credits_data.get('subscription_expires_at') and credits_data['subscription_expires_at'] > datetime.now(timezone.utc)
-                    # بررسی اعتبار پیامی
-                    has_message_credits = credits_data.get('message_credits', 0) > 0
 
-                    if not is_subscribed and not has_message_credits:
+                    current_credits = credits_data.get('message_credits', 0)
+                    is_pre_report_user = (current_credits == -1) # آیا کاربر هنوز گزارش نگرفته؟
+                    has_message_credits = (current_credits > 0)  # آیا اعتبار پولی یا رایگان (بیش از صفر) دارد؟
+
+                    if not is_subscribed and not has_message_credits and not is_pre_report_user:
                         # --- [جدید] مسدود کردن کاربر به دلیل اتمام اعتبار ---
-                        logger.info(f"User {user_id} has no credits or subscription. Blocking chat.")
-                        # 200 OK میفرستیم، چون این یک خطای سرور نیست
-                        return jsonify({'reply_type': 'credit_limit_reached'}), 200 
+                        # (این کد فقط کاربرانی که اعتبار 0 دارند را مسدود می‌کند)
+                        logger.info(f"User {user_id} has 0 credits and is not pre-report. Blocking chat.")
+                        return jsonify({'reply_type': 'credit_limit_reached'}), 200
             
             except Exception as e:
                 logger.error(f"Error checking credits for user {user_id}: {e}", exc_info=True)
@@ -2230,10 +2250,11 @@ def api_verify_otp():
 
                 # --- [جدید] اعطای 4 اعتبار پیام رایگان به کاربر جدید ---
                 conn.execute(
-                    text("INSERT INTO public.user_credits (user_id, message_credits) VALUES (:uid, 4)"),
+                    # [تغییر ۱] اعتبار اولیه از 4 به -1 تغییر کرد
+                    text("INSERT INTO public.user_credits (user_id, message_credits) VALUES (:uid, -1)"),
                     {"uid": user_id}
                 )
-                logger.info(f"Granted 4 initial credits to new user {user_id}")
+                logger.info(f"Granted -1 (pre-report) credits to new user {user_id}")
 
                 # --- [جدید] بررسی و اعمال کد معرف ---
                 if referral_code:
