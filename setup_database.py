@@ -115,7 +115,6 @@ def create_extensions():
 # ------------------------------------------------------------------------------
 def create_tables():
     
-    # === [اصلاحیه ۱] ===
     # users (جدید: مبتنی بر شماره موبایل)
     users_table = """
     -- گام ۱: جدول users را (اگر وجود ندارد) با ستون اصلی بساز
@@ -130,6 +129,23 @@ def create_tables():
         ADD COLUMN IF NOT EXISTS first_name VARCHAR(100),
         ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
         ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+    -- [اصلاحیه نهایی] گام ۳: ستون‌های قدیمی که NOT NULL بودند را اصلاح کن
+    -- این دستورات فقط در صورتی اجرا می‌شوند که ستون‌ها وجود داشته باشند
+    DO $$
+    BEGIN
+        -- بررسی ستون telegram_user_id
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'users' AND column_name = 'telegram_user_id' AND is_nullable = 'NO'
+        ) THEN
+            ALTER TABLE public.users ALTER COLUMN telegram_user_id DROP NOT NULL;
+            RAISE NOTICE 'Constraint NOT NULL removed from users.telegram_user_id';
+        END IF;
+        
+        -- (می‌توان ستون‌های مشکل‌ساز دیگر را هم اینجا اضافه کرد، اما فعلاً همین کافیست)
+        
+    END $$;
     """
 
     # === [اصلاحیه ۲] ===
