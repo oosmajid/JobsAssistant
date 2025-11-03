@@ -114,17 +114,25 @@ def create_extensions():
 # 3) Tables (v3 Schema)
 # ------------------------------------------------------------------------------
 def create_tables():
+    
+    # === [اصلاحیه ۱] ===
     # users (جدید: مبتنی بر شماره موبایل)
     users_table = """
+    -- گام ۱: جدول users را (اگر وجود ندارد) با ستون اصلی بساز
     CREATE TABLE IF NOT EXISTS public.users (
-        id SERIAL PRIMARY KEY,
-        phone_number VARCHAR(20) UNIQUE NOT NULL,
-        first_name VARCHAR(100),
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
+        id SERIAL PRIMARY KEY
     );
+    
+    -- [اصلاحیه] گام ۲: ستون‌های جدید را با ALTER TABLE اضافه کن
+    -- این تضمین می‌کند که اسکریپت روی دیتابیس قدیمی هم اجرا شود
+    ALTER TABLE public.users
+        ADD COLUMN IF NOT EXISTS phone_number VARCHAR(20) UNIQUE,
+        ADD COLUMN IF NOT EXISTS first_name VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
     """
 
+    # === [اصلاحیه ۲] ===
     # conversations (جدید: پشتیبانی از کاربر مهمان و کاربر لاگین شده)
     conversations_table = """
     -- گام ۱: جدول را با ستون‌های اصلی (که احتمالاً از قبل وجود دارند) ایجاد کن
