@@ -2532,45 +2532,46 @@ def get_subscription_price(current_user_id):
 @token_required
 def create_payment_request(current_user_id):
     """
+    [اصلاح شده برای مدیریت صحیح اتصال]
     یک درخواست پرداخت در زرین‌پال ایجاد کرده و کاربر را به درگاه هدایت می‌کند.
-    [جدید] قیمت را بر اساس زمان ثبت نام کاربر (تخفیف ۱ ساعته) محاسبه می‌کند.
     """
+    payment_id = None
+    final_amount = 0
+    description = ""
+    phone = f"user_{current_user_id}"
+
     try:
+        # --- بلاک ۱: اتصال به دیتابیس برای محاسبه قیمت و ایجاد ردیف PENDING ---
         with engine.connect() as conn:
-            # --- [جدید] منطق محاسبه قیمت ---
+            # ۱. دریافت اطلاعات کاربر و محاسبه قیمت
             user_data = conn.execute(
-            text("""
-                SELECT u.phone_number, c.discount_timer_started_at 
-                FROM public.users u
-                LEFT JOIN public.user_credits c ON u.id = c.user_id
-                WHERE u.id = :uid
-            """),
-            {"uid": current_user_id}
-        ).mappings().first()
+                text("""
+                    SELECT u.phone_number, c.discount_timer_started_at 
+                    FROM public.users u
+                    LEFT JOIN public.user_credits c ON u.id = c.user_id
+                    WHERE u.id = :uid
+                """),
+                {"uid": current_user_id}
+            ).mappings().first()
 
-        if not user_data:
-             return jsonify({'error': 'کاربر یافت نشد'}), 404
+            if not user_data:
+                 return jsonify({'error': 'کاربر یافت نشد'}), 404
 
-        phone = user_data['phone_number'] or f"user_{current_user_id}"
-        timer_start_time = user_data['discount_timer_started_at'] # [اصلاح شد]
+            phone = user_data['phone_number'] or f"user_{current_user_id}"
+            timer_start_time = user_data['discount_timer_started_at']
 
-        is_discounted = False
-        if timer_start_time: # [اصلاح شد]
-            # [اصلاح شد] مقایسه با زمان شروع تایمر
-            # (از utcnow() استفاده می‌کنیم چون ستون ما TIMESTAMPTZ است)
-            time_since_start = datetime.now(timezone.utc) - timer_start_time
-
-            # زمان تخفیf خود را اینجا تنظیم کنید (باید با تابع قبلی یکی باشد)
-            discount_duration = timedelta(minutes=DISCOUNT_DURATION_MINUTES)
-
-            if time_since_start < discount_duration:
-                is_discounted = True
+            is_discounted = False
+            if timer_start_time:
+                time_since_start = datetime.now(timezone.utc) - timer_start_time
+                discount_duration = timedelta(minutes=DISCOUNT_DURATION_MINUTES)
+                if time_since_start < discount_duration:
+                    is_discounted = True
             
+            # مقادیر را برای استفاده در خارج از with ذخیره کن
             final_amount = int(DISCOUNT_PRICE) if is_discounted else int(SUBSCRIPTION_PRICE)
             description = f"اشتراک ۱ روزه (تخفیف ویژه)" if is_discounted else f"اشتراک ۱ روزه"
-            # --- پایان منطق قیمت ---
 
-            # 1. یک رکورد پرداخت در حالت PENDING ایجاد کنید
+            # ۲. ایجاد رکورد پرداخت PENDING
             temp_authority = str(uuid.uuid4())
             payment_record = conn.execute(
                 text("""
@@ -2578,55 +2579,81 @@ def create_payment_request(current_user_id):
                     VALUES (:uid, :amount, :auth, 'PENDING')
                     RETURNING id
                 """),
-                {"uid": current_user_id, "amount": final_amount, "auth": temp_authority} # [اصلاح شد]
+                {"uid": current_user_id, "amount": final_amount, "auth": temp_authority}
             ).mappings().first()
             payment_id = payment_record['id']
-
-            # 2. آماده‌سازی درخواست برای زرین‌پال
-            payload = {
-                "merchant_id": ZARINPAL_MERCHANT_ID,
-                "amount": final_amount* 10, # [اصلاح شد]
-                "callback_url": PAYMENT_CALLBACK_URL,
-                "description": f"{description} - {phone}", # [اصلاح شد]
-                "metadata": {"user_id": current_user_id, "payment_id": payment_id}
-            }
-
-            # 3. تماس با API زرین‌پال
-            headers = {"Content-Type": "application/json", "Accept": "application/json"}
-            response = requests.post(ZARINPAL_REQUEST_URL, data=json.dumps(payload), headers=headers, timeout=10)
-            response.raise_for_status() # پرتاب خطا در صورت 4xx/5xx
             
-            response_data = response.json()
+            # ۳. اتصال را کامیت کن و ببند
+            conn.commit()
+            logger.info(f"DB: Created PENDING payment record {payment_id} for user {current_user_id}.")
+
+        # --- بلاک ۲: تماس با زرین‌پال (خارج از اتصال دیتابیس) ---
+        payload = {
+            "merchant_id": ZARINPAL_MERCHANT_ID,
+            "amount": final_amount * 10, # [اصلاح شد]
+            "callback_url": PAYMENT_CALLBACK_URL,
+            "description": f"{description} - {phone}",
+            "metadata": {"user_id": current_user_id, "payment_id": payment_id}
+        }
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        logger.info(f"Calling Zarinpal API for payment {payment_id}...")
+        response = requests.post(ZARINPAL_REQUEST_URL, data=json.dumps(payload), headers=headers, timeout=10)
+        response.raise_for_status() # پرتاب خطا در صورت 4xx/5xx
+        
+        response_data = response.json()
+
+        # --- بلاک ۳: اتصال مجدد به دیتابیس برای آپدیت رکورد ---
+        if response_data.get("data", {}).get("code") == 100:
+            # ۴. درخواست موفق بود
+            zarinpal_authority = response_data['data']['authority']
+            payment_url = f"{ZARINPAL_STARTPAY_URL}{zarinpal_authority}"
             
-            if response_data.get("data", {}).get("code") == 100:
-                # 4. درخواست موفق بود
-                zarinpal_authority = response_data['data']['authority']
-                payment_url = f"{ZARINPAL_STARTPAY_URL}{zarinpal_authority}"
-                
-                # 5. رکورد دیتابیس را با Authority واقعی زرین‌پال آپدیت کنید
+            # ۵. [اتصال مجدد] آپدیت رکورد با Authority واقعی
+            with engine.connect() as conn:
                 conn.execute(
                     text("UPDATE public.payments SET authority = :auth WHERE id = :pid"),
                     {"auth": zarinpal_authority, "pid": payment_id}
                 )
                 conn.commit()
-                
-                logger.info(f"Zarinpal payment request created for user {current_user_id}. Amount: {final_amount}, Authority: {zarinpal_authority}")
-                return jsonify({'success': True, 'payment_url': payment_url})
-            else:
-                # زرین‌پال خطا برگرداند
-                error_code = response_data.get("errors", {}).get("code", "unknown")
-                error_message = response_data.get("errors", {}).get("message", "خطای نامشخص از زرین‌پال")
-                logger.error(f"Zarinpal request error for user {current_user_id}. Code: {error_code}, Msg: {error_message}")
-                # ردیف پرداخت PENDING را پاک کنید
+            
+            logger.info(f"Zarinpal request created for user {current_user_id}. Amount: {final_amount}, Authority: {zarinpal_authority}")
+            return jsonify({'success': True, 'payment_url': payment_url})
+        else:
+            # زرین‌پال خطا برگرداند
+            error_code = response_data.get("errors", {}).get("code", "unknown")
+            error_message = response_data.get("errors", {}).get("message", "خطای نامشخص از زرین‌پال")
+            logger.error(f"Zarinpal request error for user {current_user_id}. Code: {error_code}, Msg: {error_message}")
+            
+            # ۶. [اتصال مجدد] ردیف پرداخت PENDING را پاک کنید
+            with engine.connect() as conn:
                 conn.execute(text("DELETE FROM public.payments WHERE id = :pid"), {"pid": payment_id})
                 conn.commit()
-                return jsonify({'error': f'خطای درگاه پرداخت: {error_message} (کد: {error_code})'}), 500
+            return jsonify({'error': f'خطای درگاه پرداخت: {error_message} (کد: {error_code})'}), 500
 
     except requests.exceptions.RequestException as e:
         logger.error(f"Zarinpal request failed: {e}", exc_info=True)
+        # [اصلاح شد] اگر تماس با شبکه خطا داد، ردیف PENDING را پاک کن
+        if payment_id:
+            try:
+                with engine.connect() as conn:
+                    conn.execute(text("DELETE FROM public.payments WHERE id = :pid AND status = 'PENDING'"), {"pid": payment_id})
+                    conn.commit()
+                logger.info(f"Cleaned up PENDING payment {payment_id} after network error.")
+            except Exception as db_e:
+                logger.error(f"Failed to cleanup PENDING payment {payment_id}: {db_e}")
         return jsonify({'error': 'خطا در ارتباط با درگاه پرداخت.'}), 500
+    
     except Exception as e:
         logger.error(f"Error creating payment request for user {current_user_id}: {e}", exc_info=True)
+        # پاک کردن ردیف در صورت بروز هر خطای دیگری
+        if payment_id:
+            try:
+                with engine.connect() as conn:
+                    conn.execute(text("DELETE FROM public.payments WHERE id = :pid AND status = 'PENDING'"), {"pid": payment_id})
+                    conn.commit()
+                logger.info(f"Cleaned up PENDING payment {payment_id} after general error.")
+            except Exception as db_e:
+                logger.error(f"Failed to cleanup PENDING payment {payment_id}: {db_e}")
         return jsonify({'error': 'خطای داخلی سرور در ایجاد پرداخت'}), 500
 
 @app.route('/payment/verify', methods=['GET'])
