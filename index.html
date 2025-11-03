@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>مشاور شغلی هزارجاب</title>
+    <link rel="icon" type="image/png" href="/bot_avatar.png">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -872,6 +873,14 @@
         body.dark-mode .bot-message th {
             background-color: var(--input-bg-dark);
         }
+
+        .avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%; /* تضمین می‌کند که خود عکس هم گرد باشد */
+        }
+
     </style>
 </head>
 <body>
@@ -1265,7 +1274,7 @@
             } else { // Bot
                 const avatar = document.createElement('div');
                 avatar.classList.add('avatar');
-                avatar.innerHTML = '<i class="fa-solid fa-robot"></i>';
+                avatar.innerHTML = '<img src="/bot_avatar.png" alt="bot">';
                 messageRow.appendChild(copyIcon);       // 1. آیکون کپی
                 messageRow.appendChild(messageElement); // 2. پیام
                 messageRow.appendChild(avatar);         // 3. آواتار (بصری در سمت چپ)
@@ -1288,7 +1297,7 @@
             if (sender === 'bot') {
                 const avatar = document.createElement('div');
                 avatar.classList.add('avatar');
-                avatar.innerHTML = '<i class="fa-solid fa-robot"></i>';
+                avatar.innerHTML = '<img src="/bot_avatar.png" alt="bot">';
                 messageRow.appendChild(copyIcon);       // 1. آیکون کپی
                 messageRow.appendChild(messageElement); // 2. پیام
                 messageRow.appendChild(avatar);         // 3. آواتار (بصری در سمت چپ)
@@ -1381,7 +1390,7 @@
             messageRow.classList.add('message-row', 'bot-row');
             const avatar = document.createElement('div');
             avatar.classList.add('avatar');
-            avatar.innerHTML = '<i class="fa-solid fa-robot"></i>';
+            avatar.innerHTML = '<img src="/bot_avatar.png" alt="bot">';
             const indicator = document.createElement('div');
             indicator.classList.add('message', 'bot-message', 'typing-indicator');
             indicator.innerHTML = '<span></span><span></span><span></span>';

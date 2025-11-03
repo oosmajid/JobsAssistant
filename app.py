@@ -1185,6 +1185,13 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))  # کلی�
 def serve_index():
     return send_from_directory('.', 'index.html')
 
+@app.route('/bot_avatar.png')
+def serve_bot_avatar():
+    """
+    این route جدید، فایل عکس آواتار ربات را سرو می‌کند.
+    """
+    return send_from_directory('.', 'bot_avatar.png', mimetype='image/png')
+
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
     """ورود ادمین"""
