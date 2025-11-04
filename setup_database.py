@@ -248,14 +248,16 @@ def create_tables():
         user_id INTEGER UNIQUE NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
         -- تعداد پیام‌های رایگان باقیمانده
         message_credits INTEGER NOT NULL DEFAULT 4,
-        -- تاریخ انقضای اشتراک (برای چت نامحدود)
-        subscription_expires_at TIMESTAMP
-        -- ستون جدید در دستور ALTER TABLE اضافه می‌شود
+        -- [اصلاح شد] تاریخ انقضای اشتراک باید با منطقه زمانی باشد
+        subscription_expires_at TIMESTAMPTZ
     );
 
-    -- [اصلاح شد] این دستور ستون جدید را به جدول موجود اضافه می‌کند 
-    -- (و اگر از قبل وجود داشته باشد، خطا نمی‌دهد)
+    -- [اصلاح شد] اضافه کردن ستون تایمر تخفیف (اگر وجود نداشته باشد)
     ALTER TABLE public.user_credits ADD COLUMN IF NOT EXISTS discount_timer_started_at TIMESTAMPTZ;
+
+    -- [اصلاحیه جدید] نوع ستون اشتراک را برای دیتابیس‌های قدیمی آپدیت کن
+    -- این دستور نوع ستون را از TIMESTAMP (naive) به TIMESTAMPTZ (aware) تغییر می‌دهد
+    ALTER TABLE public.user_credits ALTER COLUMN subscription_expires_at TYPE TIMESTAMPTZ;
 
     -- ایندکس برای جستجوی سریع اعتبار کاربر
     CREATE INDEX IF NOT EXISTS idx_user_credits_user_id ON public.user_credits(user_id);

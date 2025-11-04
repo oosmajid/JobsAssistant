@@ -8,12 +8,6 @@ psycopg2-binary==2.9.9
 
 # AI/ML Libraries
 google-generativeai>=0.7,<0.9
-torch>=2.5,<2.9
-transformers==4.36.2
-
-# Data Processing
-numpy>=1.26,<2.0
-pandas>=2.2,<2.3
 
 # Utilities
 python-dotenv==1.0.0
@@ -36,10 +30,6 @@ pydantic==2.5.2
 
 # Logging and Monitoring
 structlog==23.2.0
-
-# Text Processing
-nltk==3.8.1
-spacy==3.7.5
 
 # HTTP Client
 httpx==0.25.2
