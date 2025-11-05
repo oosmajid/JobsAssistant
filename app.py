@@ -1070,7 +1070,10 @@ async def llm_generate_with_retry(model, contents, tries=3, backoff=1.5):
             # NEW: بررسی کنید که آیا model None است یا خیر
             if model is None:
                 raise RuntimeError("LLM model (generic_model or llm_model) is not initialized.")
-            return await asyncio.to_thread(lambda: model.generate_content(contents))
+            return await asyncio.to_thread(lambda: model.generate_content(
+                contents,
+                request_options={'timeout': 30} # <--- اضافه کردن مهلت ۳۰ ثانیه‌ای
+            ))
         except Exception as e:
             last_err = e
             error_msg = str(e)
@@ -1098,7 +1101,10 @@ def llm_generate_with_retry_sync(model, contents, tries=3, backoff=1.5):
             if model is None:
                 raise RuntimeError("LLM model (generic_model or llm_model) is not initialized.")
             # Direct synchronous call
-            return model.generate_content(contents)
+            return model.generate_content(
+                contents,
+                request_options={'timeout': 30} # <--- اضافه کردن مهلت ۳۰ ثانیه‌ای
+            )
         except Exception as e:
             last_err = e
             error_msg = str(e)

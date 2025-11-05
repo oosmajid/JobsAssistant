@@ -40,3 +40,5 @@ python-decouple==3.8
 # --- موارد جدید برای لاگین ---
 kavenegar==1.1.2
 PyJWT==2.8.0
+
+gunicorn
