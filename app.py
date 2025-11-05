@@ -421,7 +421,7 @@ def fetch_available_models_from_api(api_key: str) -> list[str]:
         configure_genai(api_key)
         
         # دریافت لیست تمام مدل‌ها
-        models = list(genai.list_models())
+        models = list(genai.list_models(request_options={'timeout': 15})) # <--- مهلت زمانی اضافه شد
         
         # فیلتر کردن مدل‌های مناسب (فقط generateContent و بدون image-generation)
         suitable_models = []
