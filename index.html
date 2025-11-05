@@ -970,7 +970,7 @@
                 <p id="otp-message">کد ۶ رقمی ارسال شده به شماره زیر را وارد کنید:</p>
                 <p id="user-phone-display" style="font-weight: bold; color: var(--text-color-light); direction: ltr;"></p>
                 <div class="modal-error" id="login-error-otp"></div>
-                <input type="tel" id="otp-input" class="modal-input" placeholder="کد تایید ۶ رقمی" maxlength="6">
+                <input type="tel" id="otp-input" class="modal-input" placeholder="کد تایید ۶ رقمی" maxlength="6" inputmode="numeric">
                 <button id="verify-otp-btn" class="modal-button-primary">تایید و ورود</button>
                 <button id="change-phone-btn">تغییر شماره موبایل</button>
             </div>
@@ -2805,6 +2805,22 @@
             }
         });
         // --- پایان Event Listeners مودال اعتبار ---
+
+        if (otpInput) {
+            otpInput.addEventListener('input', (e) => {
+                let value = e.target.value;
+                if (!value) return;
+
+                // تبدیل اعداد فارسی (۰۱۲۳۴۵۶۷۸۹)
+                value = value.replace(/[\u06F0-\u06F9]/g, (c) => c.charCodeAt(0) - 0x06F0);
+                // تبدیل اعداد عربی (٠١٢٣٤٥٦٧٨٩)
+                value = value.replace(/[\u0660-\u0669]/g, (c) => c.charCodeAt(0) - 0x0660);
+                // حذف هر چیزی که عدد نیست (برای اطمینان)
+                value = value.replace(/\D/g, '');
+
+                e.target.value = value;
+            });
+        }
 
         /**
          * [جدید] مدیریت بازگشت کاربر از درگاه پرداخت (Back Button / bfcache)
